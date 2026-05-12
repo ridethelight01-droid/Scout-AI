@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SCOUT IA</title>
+<style>
+:root {
+  --green: #1D9E75; --green-light: #E1F5EE; --green-dark: #0F6E52;
+  --amber: #BA7517; --amber-light: #FDF3E3;
+  --red: #E24B4A; --red-light: #FDEAEA;
+  --text: #1a1a1a; --text2: #555; --text3: #999;
+  --border: rgba(0,0,0,0.08); --bg: #f4f4f2; --card: #fff;
+  --radius: 16px; --radius-sm: 10px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { min-height: 100%; background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; color: var(--text); }
+
+.header { position: sticky; top: 0; z-index: 100; background: rgba(244,244,242,0.95); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); padding: 12px 16px 10px; border-bottom: 0.5px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 34px; height: 34px; background: var(--green); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+.logo-title { font-size: 17px; font-weight: 700; letter-spacing: -0.4px; }
+.logo-sub { font-size: 11px; color: var(--text2); }
+.header-right { display: flex; align-items: center; gap: 8px; }
+.lang-toggle { display: flex; background: rgba(0,0,0,0.07); border-radius: 8px; padding: 2px; }
+.lang-btn { padding: 4px 11px; font-size: 12px; font-weight: 600; border: none; background: transparent; cursor: pointer; border-radius: 6px; color: var(--text2); }
+.lang-btn.active { background: white; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+.icon-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 2px 4px; }
+
+.screen { display: none; padding: 16px 16px 100px; }
+.screen.active { display: block; }
+
+.sec { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text3); margin: 16px 0 10px; display: flex; align-items: center; gap: 6px; }
+.sec:first-child { margin-top: 4px; }
+.badge { border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+.badge-green { background: var(--green-light); color: var(--green-dark); }
+.badge-red { background: var(--red-light); color: var(--red); }
+
+.filter-scroll { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.filter-scroll::-webkit-scrollbar { display: none; }
+.fchip { flex-shrink: 0; padding: 6px 14px; font-size: 12px; font-weight: 500; border: 1px solid var(--border); background: var(--card); border-radius: 20px; cursor: pointer; color: var(--text2); white-space: nowrap; }
+.fchip.active { background: var(--green); border-color: var(--green); color: white; font-weight: 600; }
+
+.matches { display: flex; flex-direction: column; gap: 10px; }
+.mcard { background: var(--card); border-radius: var(--radius); border: 1.5px solid transparent; padding: 14px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.06); -webkit-user-select: none; user-select: none; transition: all 0.15s; }
+.mcard:active { transform: scale(0.985); }
+.mcard.live-card { border-left: 3px solid var(--red); }
+.mcard.sel { border-color: var(--green) !important; background: var(--green-light); box-shadow: 0 3px 14px rgba(29,158,117,0.2); }
+.mteams { display: flex; align-items: center; gap: 8px; }
+.mteam { flex: 1; font-size: 14px; font-weight: 600; }
+.mteam.r { text-align: right; }
+.mcenter { display: flex; flex-direction: column; align-items: center; min-width: 70px; }
+.mscore { font-size: 19px; font-weight: 800; color: var(--green); }
+.mtime-disp { font-size: 14px; font-weight: 700; }
+.mst { font-size: 11px; margin-top: 2px; text-align: center; }
+.mst.live { color: var(--red); font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 3px; }
+.mst.sched { color: var(--text3); }
+.mtour { font-size: 11px; color: var(--text3); margin-top: 9px; padding-top: 9px; border-top: 0.5px solid var(--border); }
+.ldot { width: 6px; height: 6px; background: var(--red); border-radius: 50%; animation: pulse 1.5s infinite; display: inline-block; }
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+
+.cta-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 16px 28px; background: linear-gradient(transparent, var(--bg) 35%); z-index: 50; }
+.cta { width: 100%; padding: 15px; background: var(--green); border: none; border-radius: var(--radius); color: white; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 18px rgba(29,158,117,0.38); transition: all 0.15s; }
+.cta:disabled { opacity: 0.38; box-shadow: none; cursor: default; }
+.cta:active:not(:disabled) { transform: scale(0.98); }
+
+.banner { border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+.banner.pre { background: linear-gradient(135deg, var(--green-dark), var(--green)); }
+.banner.live { background: linear-gradient(135deg, #c0392b, var(--red)); }
+.banner-teams { font-size: 16px; font-weight: 700; color: white; }
+.banner-meta { font-size: 12px; color: rgba(255,255,255,0.75); margin-top: 3px; }
+.live-badge { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.2); border-radius: 12px; padding: 3px 10px; font-size: 11px; font-weight: 700; color: white; margin-top: 6px; }
+
+.ctabs { display: flex; gap: 7px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 16px; scrollbar-width: none; }
+.ctabs::-webkit-scrollbar { display: none; }
+.ctab { flex-shrink: 0; padding: 8px 15px; font-size: 13px; font-weight: 500; border: 1px solid var(--border); background: var(--card); border-radius: 20px; cursor: pointer; color: var(--text2); }
+.ctab.active { background: var(--amber); border-color: var(--amber); color: white; font-weight: 600; }
+.ctab.active.live-tab { background: var(--red); border-color: var(--red); }
+
+.ch-content { display: none; }
+.ch-content.visible { display: block; }
+
+/* ANALYSE BOX */
+.abox { background: var(--card); border-radius: var(--radius); box-shadow: 0 1px 6px rgba(0,0,0,0.07); overflow: hidden; min-height: 80px; }
+.abox-inner { padding: 16px 16px 20px; }
+
+/* Styles du contenu généré */
+.abox-inner h1 { font-size: 15px; font-weight: 700; color: var(--green-dark); margin: 0 0 14px; padding: 10px 14px; background: var(--green-light); border-left: 3px solid var(--green); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.abox-inner h2 { font-size: 14px; font-weight: 700; color: var(--text); margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 1.5px solid var(--green-light); }
+.abox-inner h2:first-child { margin-top: 0; }
+.abox-inner h3 { font-size: 13px; font-weight: 700; color: var(--green-dark); margin: 14px 0 6px; }
+.abox-inner p { font-size: 14px; line-height: 1.72; color: var(--text2); margin: 6px 0; }
+.abox-inner ul { padding: 0; margin: 8px 0; list-style: none; }
+.abox-inner ul li { font-size: 14px; line-height: 1.65; color: var(--text2); padding: 4px 0 4px 18px; position: relative; border-bottom: 0.5px solid var(--border); }
+.abox-inner ul li:last-child { border-bottom: none; }
+.abox-inner ul li::before { content: '▸'; color: var(--green); position: absolute; left: 0; font-size: 11px; top: 6px; }
+.abox-inner strong { color: var(--text); font-weight: 600; }
+.abox-inner em { color: var(--amber); font-style: normal; font-weight: 600; }
+.abox-inner hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* TABLEAUX */
+.abox-inner table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 12px; border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border: 1px solid rgba(29,158,117,0.15); }
+.abox-inner thead tr { background: linear-gradient(135deg, var(--green-dark), var(--green)); color: white; }
+.abox-inner thead th { padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.abox-inner tbody tr { border-bottom: 1px solid rgba(0,0,0,0.05); transition: background 0.1s; }
+.abox-inner tbody tr:nth-child(even) { background: rgba(29,158,117,0.04); }
+.abox-inner tbody tr:hover { background: var(--green-light); }
+.abox-inner tbody td { padding: 9px 12px; color: var(--text2); line-height: 1.45; vertical-align: middle; }
+.abox-inner tbody td:first-child { font-weight: 600; color: var(--text); }
+.abox-inner tbody tr:last-child td { border-bottom: none; }
+
+/* Bloc de prédiction */
+.abox-inner .prediction-box { background: linear-gradient(135deg, var(--green-light), #f0faf6); border: 1.5px solid var(--green); border-radius: var(--radius-sm); padding: 14px; margin: 14px 0; text-align: center; }
+.abox-inner .prediction-score { font-size: 28px; font-weight: 800; color: var(--green-dark); }
+.abox-inner .prediction-conf { font-size: 12px; color: var(--text3); margin-top: 4px; }
+
+.loader { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 56px 20px; }
+.ring { width: 38px; height: 38px; border: 3px solid rgba(29,158,117,0.15); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loader-msg { font-size: 14px; color: var(--text2); text-align: center; line-height: 1.5; }
+
+.back-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 14px; font-size: 14px; cursor: pointer; color: var(--text2); margin-bottom: 14px; }
+
+.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 200; align-items: flex-end; }
+.overlay.open { display: flex; }
+.sheet { background: white; border-radius: 22px 22px 0 0; padding: 24px 20px 40px; width: 100%; max-width: 500px; margin: 0 auto; }
+.sheet-handle { width: 38px; height: 4px; background: #e0e0e0; border-radius: 2px; margin: 0 auto 20px; }
+.sheet-title { font-size: 18px; font-weight: 700; margin-bottom: 18px; }
+.field-label { font-size: 13px; color: var(--text2); margin-bottom: 6px; margin-top: 16px; }
+.field-input { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; color: var(--text); background: var(--bg); }
+.sheet-save { width: 100%; margin-top: 20px; padding: 14px; background: var(--green); border: none; border-radius: var(--radius); color: white; font-size: 16px; font-weight: 700; cursor: pointer; }
+.status-row { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text3); margin-bottom: 14px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; }
+.dot.ok { background: var(--green); } .dot.err { background: var(--red); }
+.empty { text-align: center; padding: 24px 20px; color: var(--text3); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon" onclick="goHome()" style="cursor:pointer;" title="Retour accueil">⚽</div>
+    <div>
+      <div class="logo-title">SCOUT IA</div>
+      <div class="logo-sub" id="logo-sub">Moteur d'analyse football</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="lang-toggle">
+      <button class="lang-btn active" id="btn-fr" onclick="setLang('fr')">FR</button>
+      <button class="lang-btn" id="btn-en" onclick="setLang('en')">EN</button>
+    </div>
+    <button class="icon-btn" onclick="openSettings()">⚙️</button>
+  </div>
+</div>
+
+<div class="screen active" id="s-select">
+  <div class="sec" style="margin-top:4px;">Filtrer</div>
+  <div class="filter-scroll">
+    <div class="fchip active" id="f-all" onclick="filterMatches('all')">🌍 Tout</div>
+    <div class="fchip" id="f-eng" onclick="filterMatches('England')">🏴󠁧󠁢󠁥󠁮󠁧󠁿 Angleterre</div>
+    <div class="fchip" id="f-esp" onclick="filterMatches('Spain')">🇪🇸 Espagne</div>
+    <div class="fchip" id="f-ger" onclick="filterMatches('Germany')">🇩🇪 Allemagne</div>
+    <div class="fchip" id="f-ita" onclick="filterMatches('Italy')">🇮🇹 Italie</div>
+    <div class="fchip" id="f-fra" onclick="filterMatches('France')">🇫🇷 France</div>
+    <div class="fchip" id="f-eur" onclick="filterMatches('Europe')">🏆 Europe</div>
+  </div>
+  <div class="sec" id="sec-live">🔴 En direct <span class="badge badge-red" id="count-live">0</span></div>
+  <div class="matches" id="list-live">
+    <div class="loader"><div class="ring"></div><div class="loader-msg" id="load-msg">Chargement...</div></div>
+  </div>
+  <div class="sec" id="sec-sched">📅 À venir <span class="badge badge-green" id="count-sched">0</span></div>
+  <div class="matches" id="list-sched"></div>
+</div>
+
+<div class="cta-bar">
+  <button class="cta" id="cta-btn" disabled onclick="goAnalysis()">
+    <span id="cta-txt">Sélectionner un match</span>
+  </button>
+</div>
+
+<div class="screen" id="s-analysis">
+  <button class="back-btn" onclick="goBack()">← <span id="back-txt">Retour</span></button>
+  <div class="banner pre" id="match-banner">
+    <div class="banner-teams" id="b-teams"></div>
+    <div class="banner-meta" id="b-meta"></div>
+    <div id="live-indicator" style="display:none;"><div class="live-badge"><span class="ldot"></span> EN DIRECT</div></div>
+  </div>
+  <div class="ctabs">
+    <div class="ctab active" id="ct-pre" onclick="showCh('pre')">📊 Avant match</div>
+    <div class="ctab" id="ct-compo" onclick="showCh('compo')">🗺️ Tactique</div>
+    <div class="ctab" id="ct-scorers" onclick="showCh('scorers')">⚽ Buteurs</div>
+    <div class="ctab" id="ct-assists" onclick="showCh('assists')">🎯 Passeurs</div>
+    <div class="ctab" id="ct-penalty" onclick="showCh('penalty')">🟡 Penalties</div>
+  </div>
+  <div id="ch-pre" class="ch-content visible"><div class="abox"><div class="abox-inner" id="c-pre"></div></div></div>
+  <div id="ch-compo" class="ch-content"><div class="abox"><div class="abox-inner" id="c-compo"></div></div></div>
+  <div id="ch-scorers" class="ch-content"><div class="abox"><div class="abox-inner" id="c-scorers"></div></div></div>
+  <div id="ch-assists" class="ch-content"><div class="abox"><div class="abox-inner" id="c-assists"></div></div></div>
+  <div id="ch-penalty" class="ch-content"><div class="abox"><div class="abox-inner" id="c-penalty"></div></div></div>
+  <div id="ch-loader" class="loader" style="display:none;">
+    <div class="ring"></div><div class="loader-msg" id="ch-load-txt">Analyse IA en cours...</div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" onclick="closeOverlay(event)">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">⚙️ Paramètres</div>
+    <div id="status-display"></div>
+    <div class="field-label">URL du backend Railway</div>
+    <input class="field-input" id="inp-url" type="url" placeholder="https://...railway.app" />
+    <button class="sheet-save" onclick="saveSettings()">✓ Enregistrer</button>
+  </div>
+</div>
+
+<script>
+var DEFAULT_BACKEND = 'https://dynamic-manifestation-production-03dc.up.railway.app';
+function getBackend() { return localStorage.getItem('backend_url') || DEFAULT_BACKEND; }
+
+var lang = 'fr';
+var allLive = [], allSched = [], filtLive = [], filtSched = [];
+var selMatch = null, isLiveMatch = false;
+var cache = {}, currentFilter = 'all';
+
+var TX = {
+  fr: {
+    logoSub:"Moteur d'analyse football", loading:"Chargement des matchs...",
+    ctaDefault:"Sélectionner un match",
+    ctaReadyLive:function(h,a){return '🔴 Analyser en direct: '+h+' vs '+a;},
+    ctaReadyPre:function(h,a){return '⚽ Analyser: '+h+' vs '+a;},
+    analyzing:"Recherche + analyse IA en cours...\nPatientez, c'est complet 🔍", back:"Retour",
+    secLive:"🔴 En direct", secSched:"📅 À venir",
+    tabsPre:["📊 Avant match","🗺️ Tactique","⚽ Buteurs","🎯 Passeurs","🟡 Penalties"],
+    tabsLive:["📊 Analyse live","🗺️ Tactique live","⚽ Buteurs","🎯 Passeurs","🟡 Penalties"],
+    noLive:"Aucun match en direct.", noSched:"Aucun match à venir.",
+    apiErr:"Erreur — vérifiez l'URL backend dans ⚙️", noUrl:"⚠️ URL Railway manquante"
+  },
+  en: {
+    logoSub:"Football Analysis Engine", loading:"Loading matches...",
+    ctaDefault:"Select a match",
+    ctaReadyLive:function(h,a){return '🔴 Live analysis: '+h+' vs '+a;},
+    ctaReadyPre:function(h,a){return '⚽ Analyze: '+h+' vs '+a;},
+    analyzing:"Searching + AI analysis in progress...\nPlease wait 🔍", back:"Back",
+    secLive:"🔴 Live", secSched:"📅 Upcoming",
+    tabsPre:["📊 Pre-match","🗺️ Tactics","⚽ Scorers","🎯 Assists","🟡 Penalties"],
+    tabsLive:["📊 Live analysis","🗺️ Live tactics","⚽ Scorers","🎯 Assists","🟡 Penalties"],
+    noLive:"No live matches.", noSched:"No upcoming matches.",
+    apiErr:"Error — check backend URL in ⚙️", noUrl:"⚠️ Railway URL missing"
+  }
+};
+function tx(k){ return TX[lang][k]; }
+
+// Convertit markdown tables en vrais tableaux HTML
+function convertMarkdownTable(text) {
+  var lines = text.split('\n');
+  var result = [];
+  var i = 0;
+  while (i < lines.length) {
+    var line = lines[i];
+    // Détecter une ligne de tableau markdown (commence par |)
+    if (line.trim().startsWith('|')) {
+      var tableLines = [];
+      while (i < lines.length && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      // Convertir en tableau HTML
+      var html = '<table><thead>';
+      var isHeader = true;
+      tableLines.forEach(function(tl) {
+        // Ligne séparateur (--|--|--)
+        if (tl.match(/^\|[\s\-:\|]+\|$/)) { html += '</thead><tbody>'; isHeader = false; return; }
+        var cells = tl.split('|').filter(function(c,idx,arr){ return idx > 0 && idx < arr.length-1; });
+        var tag = isHeader ? 'th' : 'td';
+        html += '<tr>' + cells.map(function(c){ return '<'+tag+'>'+c.trim()+'</'+tag+'>'; }).join('') + '</tr>';
+      });
+      html += isHeader ? '</thead><tbody></tbody></table>' : '</tbody></table>';
+      result.push(html);
+    } else {
+      result.push(line);
+      i++;
+    }
+  }
+  return result.join('\n');
+}
+
+function renderContent(text) {
+  if (!text) return '';
+  // Convertir les tableaux markdown en HTML d'abord
+  text = convertMarkdownTable(text);
+  // Si HTML déjà présent, juste convertir le markdown restant
+  text = text
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^---$/gm, '<hr>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, function(m){ return '<ul>'+m+'</ul>'; })
+    .replace(/\n\n+/g, '</p><p>')
+    .replace(/^(?!<[a-zA-Z\/])(.+)$/gm, function(m){ return m.trim() ? '<p>'+m+'</p>' : ''; });
+  return text;
+}
+
+function safe(id){ return document.getElementById(id); }
+
+function setLang(l) {
+  lang = l;
+  safe('btn-fr').classList.toggle('active', l==='fr');
+  safe('btn-en').classList.toggle('active', l==='en');
+  applyLabels();
+}
+
+function applyLabels() {
+  if(safe('logo-sub')) safe('logo-sub').textContent = tx('logoSub');
+  if(safe('load-msg')) safe('load-msg').textContent = tx('loading');
+  if(safe('back-txt')) safe('back-txt').textContent = tx('back');
+  if(safe('ch-load-txt')) safe('ch-load-txt').textContent = tx('analyzing');
+  if(safe('sec-live')) safe('sec-live').innerHTML = tx('secLive')+' <span class="badge badge-red" id="count-live">'+filtLive.length+'</span>';
+  if(safe('sec-sched')) safe('sec-sched').innerHTML = tx('secSched')+' <span class="badge badge-green" id="count-sched">'+filtSched.length+'</span>';
+  var tabs = isLiveMatch ? tx('tabsLive') : tx('tabsPre');
+  ['pre','compo','scorers','assists','penalty'].forEach(function(id,i){
+    var el=safe('ct-'+id); if(!el) return;
+    el.textContent = tabs[i];
+    if(isLiveMatch) el.classList.add('live-tab'); else el.classList.remove('live-tab');
+  });
+  if(safe('cta-txt')) {
+    if(!selMatch) safe('cta-txt').textContent = tx('ctaDefault');
+    else if(isLiveMatch) safe('cta-txt').textContent = tx('ctaReadyLive')(selMatch.home, selMatch.away);
+    else safe('cta-txt').textContent = tx('ctaReadyPre')(selMatch.home, selMatch.away);
+  }
+}
+
+function isEurope(m){ return m.tournament&&(m.tournament.indexOf('Champions')!==-1||m.tournament.indexOf('Europa')!==-1||m.tournament.indexOf('Conference')!==-1); }
+
+function filterMatches(country) {
+  currentFilter = country;
+  document.querySelectorAll('.fchip').forEach(function(c){c.classList.remove('active');});
+  var map={'all':'f-all','England':'f-eng','Spain':'f-esp','Germany':'f-ger','Italy':'f-ita','France':'f-fra','Europe':'f-eur'};
+  var el=safe(map[country]); if(el) el.classList.add('active');
+  function applyF(arr){ if(country==='all') return arr; if(country==='Europe') return arr.filter(isEurope); return arr.filter(function(m){return m.country===country;}); }
+  filtLive=applyF(allLive); filtSched=applyF(allSched);
+  selMatch=null; isLiveMatch=false; safe('cta-btn').disabled=true;
+  applyLabels(); renderAll();
+}
+
+function loadMatches() {
+  safe('list-live').innerHTML='<div class="loader"><div class="ring"></div><div class="loader-msg">'+tx('loading')+'</div></div>';
+  safe('list-sched').innerHTML='';
+  var backend=getBackend();
+  if(!backend){safe('list-live').innerHTML='<div class="empty">'+tx('noUrl')+'</div>';return;}
+  fetch(backend+'/api/matches')
+    .then(function(r){return r.json();})
+    .then(function(data){
+      allLive=data.live||[]; allSched=data.scheduled||[];
+      filtLive=allLive; filtSched=allSched;
+      applyLabels(); renderAll();
+    })
+    .catch(function(err){
+      safe('list-live').innerHTML='<div class="empty">'+tx('apiErr')+'<br><small style="opacity:0.5;font-size:11px;">'+err.message+'</small></div>';
+    });
+}
+
+function renderAll(){ renderList('list-live',filtLive,true); renderList('list-sched',filtSched,false); }
+
+function renderList(cid,matches,isLive){
+  var c=safe(cid);
+  if(!matches||!matches.length){c.innerHTML='<div class="empty">'+(isLive?tx('noLive'):tx('noSched'))+'</div>';return;}
+  c.innerHTML=matches.map(function(m,i){
+    var p=isLive?'L':'S';
+    var center=isLive
+      ?'<div class="mscore">'+m.homeScore+' - '+m.awayScore+'</div><div class="mst live"><span class="ldot"></span>'+m.status+'</div>'
+      :'<div class="mtime-disp">'+(m.time||'–:––')+'</div><div class="mst sched">'+(m.dateLabel||'')+'</div>';
+    return '<div class="mcard'+(isLive?' live-card':'')+'" id="mc'+p+i+'" onclick="pickMatch(\''+p+'\','+i+')">' +
+      '<div class="mteams"><div class="mteam">'+m.home+'</div><div class="mcenter">'+center+'</div><div class="mteam r">'+m.away+'</div></div>' +
+      '<div class="mtour">'+m.tournament+(m.country?' · '+m.country:'')+'</div></div>';
+  }).join('');
+}
+
+function pickMatch(prefix,i){
+  var m=prefix==='L'?filtLive[i]:filtSched[i];
+  isLiveMatch=prefix==='L';
+  var today=new Date().toLocaleDateString(lang==='fr'?'fr-FR':'en-GB',{weekday:'long',day:'numeric',month:'long'});
+  selMatch={id:m.id,homeId:m.homeId,awayId:m.awayId,home:m.home,away:m.away,leagueName:m.tournament,city:m.country||'',date:m.dateLabel||today,homeScore:m.homeScore,awayScore:m.awayScore,status:m.status,time:m.time||null};
+  document.querySelectorAll('.mcard').forEach(function(c){c.classList.remove('sel');});
+  safe('mc'+prefix+i).classList.add('sel');
+  safe('cta-btn').disabled=false;
+  applyLabels();
+}
+
+function goAnalysis(){
+  if(!selMatch) return;
+  cache={};
+  var m=selMatch;
+  var scoreStr=isLiveMatch?' '+m.homeScore+' - '+m.awayScore:'';
+  safe('b-teams').textContent=m.home+'  vs  '+m.away+scoreStr;
+  safe('b-meta').textContent=m.leagueName+(m.time?' · '+m.time:'')+(m.date?' · '+m.date:'');
+  safe('match-banner').className='banner '+(isLiveMatch?'live':'pre');
+  safe('live-indicator').style.display=isLiveMatch?'block':'none';
+  safe('s-select').classList.remove('active');
+  safe('s-analysis').classList.add('active');
+  window.scrollTo(0,0);
+  ['pre','compo','scorers','assists','penalty'].forEach(function(s){safe('ch-'+s).classList.remove('visible');safe('c-'+s).innerHTML='';});
+  document.querySelectorAll('.ctab').forEach(function(c){c.classList.remove('active');});
+  safe('ct-pre').classList.add('active');
+  safe('ch-pre').classList.add('visible');
+  applyLabels();
+  showCh('pre');
+}
+
+function goHome(){
+  safe('s-analysis').classList.remove('active');
+  safe('s-select').classList.add('active');
+  window.scrollTo(0,0);
+  selMatch=null; isLiveMatch=false;
+  safe('cta-btn').disabled=true;
+  applyLabels();
+}
+function goBack(){
+  safe('s-analysis').classList.remove('active');
+  safe('s-select').classList.add('active');
+  window.scrollTo(0,0);
+}
+
+function showCh(ch){
+  document.querySelectorAll('.ctab').forEach(function(c){c.classList.remove('active');});
+  safe('ct-'+ch).classList.add('active');
+  ['pre','compo','scorers','assists','penalty'].forEach(function(s){safe('ch-'+s).classList.toggle('visible',s===ch);});
+  var box=safe('c-'+ch);
+  if(cache[ch]){box.innerHTML=cache[ch];return;}
+  safe('ch-loader').style.display='flex';
+  box.innerHTML='';
+  fetchAnalysis(ch).then(function(html){
+    safe('ch-loader').style.display='none';
+    cache[ch]=html; box.innerHTML=html;
+  }).catch(function(err){
+    safe('ch-loader').style.display='none';
+    box.innerHTML='<p style="color:var(--red);padding:8px;">Erreur: '+err.message+'</p>';
+  });
+}
+
+// Cache clé = matchId + chapter + lang
+function getCacheKey(ch) {
+  return 'scout_' + (selMatch?selMatch.id:'') + '_' + ch + '_' + lang + '_' + (isLiveMatch?'live':'pre');
+}
+
+function fetchAnalysis(ch){
+  var backend=getBackend();
+  if(!backend) return Promise.reject(new Error(tx('noUrl')));
+
+  // Vérifier le cache localStorage (sauf matchs live qui changent)
+  if(!isLiveMatch) {
+    var cached = localStorage.getItem(getCacheKey(ch));
+    if(cached) {
+      try {
+        var parsed = JSON.parse(cached);
+        // Cache valide 6h
+        if(parsed.ts && (Date.now()-parsed.ts) < 6*3600*1000) {
+          return Promise.resolve(parsed.html);
+        }
+      } catch(e) {}
+    }
+  }
+
+  var lineupsPromise=Promise.resolve(null);
+  if(selMatch&&selMatch.id){
+    lineupsPromise=fetch(backend+'/api/lineups/'+selMatch.id)
+      .then(function(r){return r.json();}).catch(function(){return null;});
+  }
+  return lineupsPromise.then(function(lineups){
+    return fetch(backend+'/api/analyze',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({chapter:ch,match:selMatch,lang:lang,isLive:isLiveMatch,lineups:lineups})
+    });
+  }).then(function(r){return r.json();}).then(function(data){
+    if(data.error) throw new Error(data.error);
+    var html = renderContent(data.text||'');
+    // Sauvegarder dans le cache (sauf matchs live)
+    if(!isLiveMatch) {
+      try { localStorage.setItem(getCacheKey(ch), JSON.stringify({html:html, ts:Date.now()})); } catch(e) {}
+    }
+    return html;
+  });
+}
+
+function openSettings(){
+  safe('inp-url').value=localStorage.getItem('backend_url')||'';
+  var url=getBackend(); var ok=url&&url.indexOf('railway.app')!==-1;
+  safe('status-display').innerHTML='<div class="status-row"><div class="dot '+(ok?'ok':'err')+'"></div><span>'+(ok?'Backend: '+url:'Non configuré')+'</span></div>';
+  safe('overlay').classList.add('open');
+}
+function closeOverlay(e){if(e.target===safe('overlay'))safe('overlay').classList.remove('open');}
+function saveSettings(){
+  var url=safe('inp-url').value.trim();
+  if(url)localStorage.setItem('backend_url',url.replace(/\/$/,''));
+  safe('overlay').classList.remove('open');
+  loadMatches();
+}
+
+document.addEventListener('DOMContentLoaded',function(){applyLabels();loadMatches();});
+</script>
+</body>
+</html>
