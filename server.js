@@ -35,6 +35,20 @@ app.get('/api/matches', async (req, res) => {
       }
     });
     const data = await response.json();
+    let matches = [];
+    if (data?.response?.matches) matches = data.response.matches;
+    else if (Array.isArray(data)) matches = data;
+    
+    const upcoming = matches.filter(m => m.status?.notStarted === true);
+    res.json({ matches: upcoming });
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'x-rapidapi-host': RAPIDAPI_HOST,
+        'x-rapidapi-key': RAPIDAPI_KEY
+      }
+    });
+    const data = await response.json();
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
