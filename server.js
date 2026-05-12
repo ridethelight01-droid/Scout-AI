@@ -26,7 +26,7 @@ app.get('/api/matches', async (req, res) => {
   if (!RAPIDAPI_KEY) return res.status(500).json({ error: 'RAPIDAPI_KEY non configurée' });
 
   try {
-    const url = `https://${RAPIDAPI_HOST}/football-get-all-matches-by-league-id?leagueid=${leagueId}`;
+    const url = `https://${RAPIDAPI_HOST}/football-get-all-matches-by-league?leagueid=${leagueId}`;
     const response = await fetch(url, {
       method: 'GET',
       headers: {
