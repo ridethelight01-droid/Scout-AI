@@ -1,6 +1,6 @@
 {
   "name": "scout-ia-backend",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Backend proxy for SCOUT IA - Football Analysis App",
   "main": "server.js",
   "scripts": {
