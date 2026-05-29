@@ -1425,6 +1425,60 @@ button,input{font-family:inherit}
   background:var(--home);
 }
 
+/* ─── BET WINDOW 4-LEVEL SYSTEM ─────────────────── */
+@keyframes betOpportunity{
+  0%,100%{box-shadow:0 0 22px var(--bwGlow),inset 0 0 14px rgba(0,0,0,.25)}
+  50%{box-shadow:0 0 44px var(--bwGlow),inset 0 0 28px rgba(0,0,0,.10)}
+}
+.bet-live-opportunity{animation:betOpportunity 1.4s ease-in-out infinite;}
+
+/* ─── GOAL URGENCY BANNER ────────────────────────── */
+@keyframes goalUrgency{
+  0%,100%{box-shadow:0 0 18px rgba(29,158,117,.45)}
+  50%{box-shadow:0 0 36px rgba(29,158,117,.80)}
+}
+.goal-urgency-banner{
+  border:1px solid rgba(29,158,117,.40);
+  background:linear-gradient(135deg,rgba(29,158,117,.13),rgba(15,23,33,.94));
+  border-radius:14px;
+  padding:13px 16px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  animation:goalUrgency 1.2s ease-in-out infinite;
+}
+.urgency-dot{
+  width:13px;height:13px;border-radius:50%;
+  background:#1D9E75;box-shadow:0 0 14px #1D9E75;
+  flex-shrink:0;animation:pulseLive .9s ease-in-out infinite;
+}
+
+/* ─── PHASE 1 SKELETON ───────────────────────────── */
+.phase1-badge{
+  font-family:'DM Mono',monospace;font-size:9px;
+  letter-spacing:1.2px;text-transform:uppercase;
+  color:var(--textDim);padding:3px 8px;
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:999px;display:inline-flex;align-items:center;gap:5px;
+}
+
+/* ─── TOOLTIP MOBILE FIX (P11) ───────────────────── */
+@media(max-width:600px){
+  .tooltip-panel{
+    position:fixed;
+    left:50% !important;
+    bottom:auto;
+    top:50% !important;
+    transform:translate(-50%,-50%) !important;
+    width:88vw;
+    max-width:320px;
+    max-height:72vh;
+    overflow-y:auto;
+    z-index:999;
+  }
+  .tooltip-panel:after{display:none;}
+}
+
 @media(max-width:900px){
   .metric-grid,.grid,.formation-grid,.players-layout,.penalty-grid{
     grid-template-columns:1fr;
@@ -1583,6 +1637,52 @@ function hexToRgba(hex,alpha){
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
 }
 
+// P3/P7 — Bet Window 4-level system (used everywhere)
+function betWindowLevel(confidence){
+  var c=Number(confidence||0);
+  if(c>=75) return {color:"#1D9E75",bg:"rgba(29,158,117,.12)",border:"rgba(29,158,117,.38)",label:"LIVE OPPORTUNITY",icon:"◉",urgent:true};
+  if(c>=50) return {color:"#27AE60",bg:"rgba(39,174,96,.10)",border:"rgba(39,174,96,.30)",label:"FORMING",icon:"◉",urgent:false};
+  if(c>=30) return {color:"#BA7517",bg:"rgba(186,117,23,.10)",border:"rgba(186,117,23,.30)",label:"WATCH",icon:"◐",urgent:false};
+  return {color:"#C0392B",bg:"rgba(192,57,43,.10)",border:"rgba(192,57,43,.28)",label:"AVOID",icon:"✕",urgent:false};
+}
+
+// P5 — Update currentMatch from analysis response
+function updateMatchFromAnalysis(analysis){
+  if(!analysis||!currentMatch) return;
+  if(analysis.fixtureStatus){
+    var fs=analysis.fixtureStatus;
+    if(fs.status) currentMatch.status=fs.status;
+    if(fs.minute!==undefined&&fs.minute!==null) currentMatch.minute=fs.minute;
+    if(fs.homeScore!==null&&fs.homeScore!==undefined) currentMatch.homeScore=fs.homeScore;
+    if(fs.awayScore!==null&&fs.awayScore!==undefined) currentMatch.awayScore=fs.awayScore;
+  } else if(analysis.liveScore){
+    currentMatch.homeScore=analysis.liveScore.home;
+    currentMatch.awayScore=analysis.liveScore.away;
+  }
+}
+
+// Extracted goal detection (used in both loadPulse phases)
+function applyGoalDetection(analysis){
+  var homeGoals=(analysis.scoring?.home?.length??0);
+  var awayGoals=(analysis.scoring?.away?.length??0);
+  var totalGoals=homeGoals+awayGoals;
+  if(lastGoalCount===-1){
+    lastGoalCount=totalGoals;
+  }else if(totalGoals>lastGoalCount){
+    postGoalCooldown=true;
+    postGoalRefreshCount=0;
+    lastGoalCount=totalGoals;
+  }else if(postGoalCooldown){
+    postGoalRefreshCount++;
+    var p=analysis.pulse||{};
+    var leaderChance=Math.max(p.homeGoalChance||0,p.awayGoalChance||0);
+    var w=p.scoringWindow||"";
+    if(postGoalRefreshCount>=2&&leaderChance>=52&&(w==="OPEN"||w==="CRITICAL"||w==="DANGER")){
+      postGoalCooldown=false;
+    }
+  }
+}
+
 function colorTeams(text){
   if(!currentMatch||!text) return esc(String(text||""));
   var escaped=esc(String(text));
@@ -1606,6 +1706,27 @@ function formatScorerLine(goals){
     var suffix=g.isOwnGoal?" ⊕":g.isPenalty?" (P)":"";
     return esc(name+suffix)+" "+esc(String(g.minute||""))+"'";
   }).join(" · ");
+}
+
+function computeMatchScore(match){
+  var s=match.status;
+  if(s==="NS") return 0;
+  if(s==="FT"||s==="AET"||s==="PEN") return -1;
+  var min=Number(match.minute||0);
+  var h=Number(match.homeScore||0);
+  var a=Number(match.awayScore||0);
+  var total=h+a;
+  var diff=Math.abs(h-a);
+  var score=total*18;
+  if(diff===0&&total>0) score+=22;
+  if(diff===0) score+=6;
+  if(diff===1) score+=10;
+  if(min>=80) score+=32;
+  else if(min>=70) score+=20;
+  else if(min>=60) score+=10;
+  if(total>=3) score+=16;
+  if(total>=5) score+=10;
+  return score;
 }
 
 function matchHeat(match){
@@ -1919,11 +2040,15 @@ async function loadMatches(){
     const data=await res.json();
     const live=data.live||[];
     const scheduled=data.scheduled||[];
-    const list=live.length?live:scheduled;
-    if(!list.length){
+    var rawList=live.length?live:scheduled;
+    if(!rawList.length){
       el("matches").innerHTML="<div class='empty'>Aucun match disponible.</div>";
       return;
     }
+    // P2 — Sort live matches by excitement score (most interesting first)
+    var list=rawList.slice().sort(function(a,b){
+      return computeMatchScore(b)-computeMatchScore(a);
+    });
     el("matches").innerHTML=list.map(buildMatchCard).join("");
   }catch(e){
     el("matches").innerHTML="<div class='empty'>Erreur API.</div>";
@@ -1955,46 +2080,36 @@ async function openMatch(match){
 async function loadPulse(){
   if(isLoading) return;
   isLoading=true;
-  el("content").innerHTML=`
-    <div class="skeleton">
-      <div class="skeleton-line w60"></div>
-      <div class="skeleton-line w80"></div>
-      <div class="skeleton-line"></div>
-    </div>`;
+  el("content").innerHTML=`<div class="skeleton"><div class="skeleton-line w60"></div><div class="skeleton-line w80"></div><div class="skeleton-line"></div></div>`;
+  const isLive=currentMatch.status!=="NS";
+  const body={match:currentMatch,lang:"fr",isLive};
+
+  // ── Phase 1 : Pulse local sans Claude (~1-2s) ──────────
   try{
-    const res=await fetch(API+"/api/analyze",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({match:currentMatch,lang:"fr",isLive:currentMatch.status!=="NS"})
-    });
-    const nextAnalysis=await res.json();
-    if(currentAnalysis&&currentAnalysis.pulse){ previousPulseSnapshot=currentAnalysis.pulse; }
-    currentAnalysis=nextAnalysis;
-
-    const homeGoals=(currentAnalysis.scoring?.home?.length??0);
-    const awayGoals=(currentAnalysis.scoring?.away?.length??0);
-    const totalGoals=homeGoals+awayGoals;
-    if(lastGoalCount===-1){
-      lastGoalCount=totalGoals;
-    }else if(totalGoals>lastGoalCount){
-      postGoalCooldown=true;
-      postGoalRefreshCount=0;
-      lastGoalCount=totalGoals;
-    }else if(postGoalCooldown){
-      postGoalRefreshCount++;
-      const p=currentAnalysis.pulse||{};
-      const leaderChance=Math.max(p.homeGoalChance||0,p.awayGoalChance||0);
-      const w=p.scoringWindow||"";
-      if(postGoalRefreshCount>=2&&leaderChance>=52&&(w==="OPEN"||w==="CRITICAL"||w==="DANGER")){
-        postGoalCooldown=false;
-      }
-    }
-
+    const r1=await fetch(API+"/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...body,fast:true})});
+    const p1=await r1.json();
+    if(currentAnalysis&&currentAnalysis.pulse) previousPulseSnapshot=currentAnalysis.pulse;
+    currentAnalysis=p1;
+    updateMatchFromAnalysis(p1);
+    applyGoalDetection(p1);
     renderHero();
     renderCurrentTab();
   }catch(e){
     el("content").innerHTML="<div class='panel'>Erreur analyse.</div>";
+    isLoading=false;return;
   }
+
+  // ── Phase 2 : Claude async (~+3-5s) ───────────────────
+  try{
+    const r2=await fetch(API+"/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const p2=await r2.json();
+    currentAnalysis={...p2,pulse:p2.pulse||currentAnalysis?.pulse};
+    updateMatchFromAnalysis(p2);
+    applyGoalDetection(p2);
+    renderHero();
+    renderCurrentTab();
+  }catch(e){}
+
   isLoading=false;
 }
 
@@ -2006,6 +2121,7 @@ function renderHero(){
   const isFinished=s==="FT"||s==="AET"||s==="PEN";
   const isLive=s!=="NS"&&!isFinished;
   const scoring=currentAnalysis?.scoring;
+  const cards=currentAnalysis?.cards||{};
   const homeScorers=formatScorerLine(scoring?.home);
   const awayScorers=formatScorerLine(scoring?.away);
   const scoreHtml=(isLive||isFinished)
@@ -2016,10 +2132,19 @@ function renderHero(){
     :isLive
     ?`<div class="live-pill"><span class="live-dot"></span>LIVE ${currentMatch.minute||0}'</div>`
     :`<div class="live-pill" style="background:rgba(240,180,41,.08);border-color:rgba(240,180,41,.25);color:#f0b429">À VENIR</div>`;
+  function cardLine(c){
+    var parts=[];
+    if(c&&c.yellow>0) parts.push(`🟨${c.yellow}`);
+    if(c&&c.red>0) parts.push(`🟥${c.red}`);
+    return parts.join(" ");
+  }
+  const homeCards=cardLine(cards.home);
+  const awayCards=cardLine(cards.away);
   mount.innerHTML=`
     <div class="score-banner">
       <div>
         <div class="score-team home">${esc(currentMatch.home)}</div>
+        ${homeCards?`<div style="font-size:11px;margin-top:3px">${homeCards}</div>`:""}
         ${homeScorers?`<div class="score-scorers">${homeScorers}</div>`:""}
       </div>
       <div class="score-center">
@@ -2028,6 +2153,7 @@ function renderHero(){
       </div>
       <div style="text-align:right">
         <div class="score-team away">${esc(currentMatch.away)}</div>
+        ${awayCards?`<div style="font-size:11px;margin-top:3px;text-align:right">${awayCards}</div>`:""}
         ${awayScorers?`<div class="score-scorers">${awayScorers}</div>`:""}
       </div>
     </div>`;
@@ -2085,40 +2211,85 @@ function topGlobalCrit(){
   return critLevel(Math.max(m.hp,m.ap,m.ht,m.at,m.chaos,m.hm,m.am),"danger");
 }
 
-function renderLive(){
+function getConfidence(){
   const m=metricInputs();
   const maxSignal=Math.max(m.hp,m.ap,m.ht,m.at,m.chaos,m.hm,m.am);
-  const confidence=clamp(round(Math.max(currentAnalysis?.pulse?.nextGoal?.leaderChance||0,maxSignal)),30,96);
-  const windowState=currentAnalysis?.pulse?.scoringWindow||currentAnalysis?.pulse?.nextGoal?.scoringWindow||(confidence>=58?"OPEN":confidence>=42?"WAIT":"AVOID");
+  return clamp(round(Math.max(currentAnalysis?.pulse?.nextGoal?.leaderChance||0,maxSignal)),0,96);
+}
+
+function renderLive(){
+  const confidence=getConfidence();
+  const windowState=currentAnalysis?.pulse?.scoringWindow||currentAnalysis?.pulse?.nextGoal?.scoringWindow||"CLOSED";
+  const hasPulse=currentAnalysis?.pulse?.available||false;
+  const urgencyBanner=buildGoalUrgencyBanner();
   el("content").innerHTML=`
     <div class="pulse-stack">
+      ${urgencyBanner}
       ${buildBetWindow(windowState,confidence,postGoalCooldown)}
       ${buildNextGoalPanel()}
       ${buildDeadZonePanel()}
       ${buildLiveShiftPanel()}
-      ${buildDualRadar()}
-      ${buildMiniTimeline()}
       <div class="metric-grid">
         ${buildMetricCard("pressure")}
         ${buildMetricCard("chaos")}
         ${buildMetricCard("danger")}
         ${buildMetricCard("momentum")}
       </div>
-      ${buildPulseRead()}
-      ${buildKeySignals()}
-      <div class="grid">
-        <div class="panel">
-          <div class="panel-title">⚡ Pulse Analyse</div>
-          <div class="read">${renderLiveSection()}</div>
-        </div>
-        <div class="panel">
-          <div class="panel-title">📊 Live Stats</div>
-          ${buildStats(currentAnalysis.stats)}
-        </div>
+      ${buildUnifiedPulseBlock(confidence)}
+      <div class="panel">
+        <div class="panel-title">📊 Live Stats</div>
+        ${buildStats(currentAnalysis.stats)}
       </div>
-      <div class="footer-pulse">SCOUT IA · Mise à jour toutes les 60s</div>
+      ${buildDualRadar()}
+      ${buildMiniTimeline()}
+      <div class="footer-pulse">PULSE IA · Données temps réel</div>
     </div>`;
   requestAnimationFrame(drawMomentumTimeline);
+}
+
+function buildGoalUrgencyBanner(){
+  const p=currentAnalysis?.pulse||{};
+  const homeChance=Number(p.homeGoalChance||0);
+  const awayChance=Number(p.awayGoalChance||0);
+  const maxChance=Math.max(homeChance,awayChance);
+  if(maxChance<65||postGoalCooldown) return "";
+  const team=homeChance>=awayChance?currentMatch.home:currentMatch.away;
+  return `
+    <div class="goal-urgency-banner">
+      <div class="urgency-dot"></div>
+      <div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:900;color:#1D9E75;line-height:1">BUT PROBABLE</div>
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:rgba(255,255,255,.75);letter-spacing:.8px;margin-top:4px">${colorTeams(team)} · ${round(maxChance)}% signal dans les prochaines minutes</div>
+      </div>
+    </div>`;
+}
+
+function buildUnifiedPulseBlock(confidence){
+  const lvl=betWindowLevel(confidence||getConfidence());
+  const live=currentAnalysis?.sections?.live;
+  const hasClaude=Array.isArray(live)&&live.length>0;
+  const isPhase1=currentAnalysis?.fastMode||!hasClaude;
+  const m=metricInputs();
+  var lines=[];
+  if(hasClaude){
+    lines=live.slice(0,3);
+  } else {
+    const pressureTeam=m.hp>=m.ap?currentMatch.home:currentMatch.away;
+    const dangerTeam=m.ht>=m.at?currentMatch.home:currentMatch.away;
+    const momentumTeam=m.hm>=m.am?currentMatch.home:currentMatch.away;
+    lines.push(m.hp>=m.ap?`${pressureTeam} occupe le territoire.`:"Le territoire reste disputé.");
+    lines.push(Math.max(m.ht,m.at)>=55?`${dangerTeam} génère la menace principale.`:m.chaos>=65?"Match électrique. Toutes les séquences sont ouvertes.":"Le danger reste contenu.");
+    lines.push(Math.abs(m.hm-m.am)>12?`${momentumTeam} prend l'ascendant.`:"Le momentum reste équilibré.");
+  }
+  const claudeLoader=isPhase1?`<div class="phase1-badge" style="margin-top:10px"><span class="live-dot" style="width:5px;height:5px"></span>Analyse IA en cours...</div>`:"";
+  return `
+    <div class="pulse-read" style="--critColor:${lvl.color}">
+      <div class="pulse-read-head">
+        <div class="label-mono">⚡ PULSE ANALYSIS ${tooltip("Pulse Analysis","Lecture synthétique combinant signaux live et analyse IA Claude.",[{label:"Phase 1",value:"Pulse local — immédiat"},{label:"Phase 2",value:"IA Claude — +3-5s"}])}</div>
+      </div>
+      ${lines.map(function(l){return `<div class="pulse-read-line">${colorTeams(l)}</div>`;}).join("")}
+      ${claudeLoader}
+    </div>`;
 }
 
 function renderLiveSection(){
@@ -2152,7 +2323,7 @@ function buildLocalLiveLines(){
 function buildBetWindow(state,confidence,isPostGoalCooldown){
   if(isPostGoalCooldown){
     return `
-      <div class="bet-window" style="background:linear-gradient(135deg,rgba(90,114,144,.08),rgba(15,23,33,.94));border-color:rgba(90,114,144,.30)">
+      <div class="bet-window" style="background:rgba(90,114,144,.08);border-color:rgba(90,114,144,.25)">
         <div class="bet-window-left">
           <div class="bet-icon" style="color:#5a7290;font-size:20px">↺</div>
           <div>
@@ -2163,24 +2334,18 @@ function buildBetWindow(state,confidence,isPostGoalCooldown){
         <div class="bet-window-confidence" style="color:#5a7290">—</div>
       </div>`;
   }
-  const map={
-    OPEN:{color:"#1D9E75",icon:"◉",text:"BET WINDOW OPEN",cls:"open"},
-    CRITICAL:{color:"#1D9E75",icon:"◉",text:"GOAL SIGNAL CRITICAL",cls:"open"},
-    FORMING:{color:"#BA7517",icon:"◐",text:"SIGNAL FORMING",cls:""},
-    WATCH:{color:"#BA7517",icon:"◐",text:"WATCH — SIGNAL LOW",cls:""},
-    WAIT:{color:"#BA7517",icon:"◐",text:"WAIT — SIGNAL FORMING",cls:""},
-    DANGER:{color:"#A32D2D",icon:"✕",text:"DANGER — HIGH VOLATILITY",cls:""},
-    AVOID:{color:"#A32D2D",icon:"✕",text:"AVOID — HIGH RISK",cls:""},
-    CLOSED:{color:"#5a7290",icon:"○",text:"WINDOW CLOSED",cls:""}
-  };
-  const c=map[state]||map.WAIT;
+  const lvl=betWindowLevel(confidence);
+  const pulseClass=lvl.urgent?"bet-live-opportunity":"";
   return `
-    <div class="bet-window" style="background:linear-gradient(135deg,${hexToRgba(c.color,.10)},rgba(15,23,33,.92));border-color:${hexToRgba(c.color,.35)}">
+    <div class="bet-window ${pulseClass}" style="--bwGlow:${lvl.color};background:${lvl.bg};border-color:${lvl.border}">
       <div class="bet-window-left">
-        <div class="bet-icon ${c.cls}" style="color:${c.color}">${c.icon}</div>
-        <div class="bet-window-text" style="color:${c.color}">${c.text}</div>
+        <div class="bet-icon ${lvl.urgent?'open':''}" style="color:${lvl.color}">${lvl.icon}</div>
+        <div>
+          <div class="bet-window-text" style="color:${lvl.color}">${lvl.label}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:${lvl.color};opacity:.7;letter-spacing:1px;margin-top:3px">BET WINDOW SIGNAL</div>
+        </div>
       </div>
-      <div class="bet-window-confidence" style="color:${c.color}">${confidence}%</div>
+      <div class="bet-window-confidence" style="color:${lvl.color}">${confidence}%</div>
     </div>`;
 }
 
@@ -2194,11 +2359,11 @@ function buildNextGoalPanel(){
   const leaderTeam=leader==="HOME"?currentMatch.home:currentMatch.away;
   const leaderChance=Math.max(homeChance,awayChance);
   const state=p.scoringWindow||ng.scoringWindow||"WATCH";
-  let color="#BA7517";
-  if(state==="CRITICAL"||state==="OPEN") color="#1D9E75";
-  if(state==="DANGER") color="#A32D2D";
-  if(state==="CLOSED"||noGoalChance>leaderChance) color="#5a7290";
-  const label=state==="CRITICAL"?"GOAL SIGNAL CRITICAL":state==="OPEN"?"GOAL WINDOW OPEN":state==="DANGER"?"HIGH VOLATILITY":state==="FORMING"?"SIGNAL FORMING":state==="WATCH"?"LOW SIGNAL":"WINDOW CLOSED";
+  // P7 — Same 4-level color system as Bet Window
+  var ngLvl=betWindowLevel(leaderChance);
+  if(noGoalChance>leaderChance) ngLvl=betWindowLevel(0);
+  const color=ngLvl.color;
+  const label=ngLvl.urgent?"GOAL WINDOW OPEN":ngLvl.label==="FORMING"?"SIGNAL FORMING":ngLvl.label==="WATCH"?"LOW SIGNAL":ngLvl.label==="AVOID"?"WINDOW CLOSED":"LOW SIGNAL";
   const text=p.nextLikelyEvent||ng.nextLikelyEvent||"Attendre un signal plus clair sur la prochaine séquence.";
   return `
     <div class="next-goal-panel" style="--ngColor:${color};--ngGlow:${hexToRgba(color,.18)};--ngShadow:${hexToRgba(color,.20)};">
@@ -2310,11 +2475,18 @@ function buildMetricCard(type){
   const team=config.home>=config.away?currentMatch.home:currentMatch.away;
   const verdict=metricVerdict(type,config.home,config.away,team,config.main);
   const facts=metricFacts(type,config.home,config.away);
+  // P12 — Title opacity/color based on level
+  const titleAlpha={dormant:.28,low:.48,medium:.72,high:.90,critical:1}[identity.b]||.72;
+  const titleColor=hexToRgba(identity.id.accent,titleAlpha);
+  // P13 — % bars
+  const totalVal=(config.home+config.away)||1;
+  const homePct=Math.round((config.home/totalVal)*100);
+  const awayPct=100-homePct;
   return `
     <div class="metric-card brightness-${identity.b}" style="${identity.css}--critColor:${crit.color};--critSoft:${crit.soft}">
       <div class="metric-head-signature">
         <div>
-          <div class="metric-title-big">${identity.id.name}</div>
+          <div class="metric-title-big" style="color:${titleColor}">${identity.id.name}</div>
           <div class="metric-title-sub"><span class="label-dot"></span>${crit.label}</div>
         </div>
         <div class="metric-illustration">${metricIllustration(type,identity.id.accent,identity.b)}</div>
@@ -2325,8 +2497,16 @@ function buildMetricCard(type){
       </div>
       <div class="metric-verdict">${colorTeams(verdict)}</div>
       <div class="metric-facts">${colorTeams(facts)}</div>
-      ${duelBar(currentMatch.home,config.home,true)}
-      ${duelBar(currentMatch.away,config.away,false)}
+      <div class="duel-row">
+        <div class="duel-team">${esc(shortName(currentMatch.home))}</div>
+        <div class="duel-bar"><div class="duel-fill" style="width:${homePct}%;background:var(--home)"></div></div>
+        <div class="duel-value" style="color:var(--home)">${homePct}%</div>
+      </div>
+      <div class="duel-row">
+        <div class="duel-team">${esc(shortName(currentMatch.away))}</div>
+        <div class="duel-bar"><div class="duel-fill" style="width:${awayPct}%;background:var(--away)"></div></div>
+        <div class="duel-value" style="color:var(--away)">${awayPct}%</div>
+      </div>
       <div class="crit-badge">${crit.icon} ${crit.text}</div>
     </div>`;
 }
@@ -2437,9 +2617,12 @@ function pulseActionSignal(m){
 
 function buildDualRadar(){
   const m=metricInputs();
-  const labels=["PRESS.","CHAOS","THREAT","MOMENT.","DOM."];
-  const home=[m.hp,m.chaos,m.ht,m.hm,m.hd];
-  const away=[m.ap,m.chaos,m.at,m.am,m.ad];
+  const p=getPulse();
+  const homeGoalPct=clamp(Number(p.homeGoalChance||m.ht),0,100);
+  const awayGoalPct=clamp(Number(p.awayGoalChance||m.at),0,100);
+  const labels=["PRESS.","CHAOS","GOAL%","MOMENT.","DOM."];
+  const home=[m.hp,m.chaos,homeGoalPct,m.hm,m.hd];
+  const away=[m.ap,m.chaos,awayGoalPct,m.am,m.ad];
   const size=280,cx=140,cy=140,r=92;
   const hp=radarPoints(home,cx,cy,r);
   const ap=radarPoints(away,cx,cy,r);
@@ -2510,6 +2693,22 @@ function drawMomentumTimeline(){
   drawAxis(ctx,w,h,minute);
   drawCurve(ctx,fakeSeries(m.hp,minute,"h"),w,h,"#378ADD",false);
   drawCurve(ctx,fakeSeries(m.ap,minute,"a"),w,h,"#ff3358",true);
+  // P10 — Goal markers on timeline
+  const allGoals=((currentAnalysis?.scoring?.home||[]).concat(currentAnalysis?.scoring?.away||[]));
+  allGoals.forEach(function(g){
+    const gmin=Number(g.minute)||0;
+    if(gmin<=0||gmin>minute) return;
+    const x=12+(gmin/Math.max(60,minute))*(w-24);
+    ctx.save();
+    ctx.strokeStyle="rgba(240,180,41,.7)";
+    ctx.lineWidth=1.5;
+    ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(x,20);ctx.lineTo(x,h-28);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font="10px sans-serif";
+    ctx.fillText("⚽",x-5,18);
+    ctx.restore();
+  });
 }
 
 function fakeSeries(base,minute,side){
@@ -2861,10 +3060,9 @@ function penaltyGauge(team,idx){
 }
 
 function penaltyColor(v){
-  if(v>=71) return "#A32D2D";
-  if(v>=51) return "#BA7517";
-  if(v>=31) return "#185FA5";
-  return "#5a7290";
+  if(v>=80) return "#A32D2D"; // Rouge urgent
+  if(v>=50) return "#1D9E75"; // Vert
+  return "#5a7290";           // Gris
 }
 
 function seasonPenaltyCard(team){

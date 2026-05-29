@@ -5,8 +5,30 @@ const {
   getFixtureStatistics,
   getFixtureEvents,
   getFixturePlayers,
-  getPlayersSeasonStats
+  getPlayersSeasonStats,
+  getFixtureStatus
 } = require("./footballApi.service");
+
+function computeLiveScore(events, homeId, awayId) {
+  const score = { home: 0, away: 0 };
+  if (!Array.isArray(events)) return score;
+  events.forEach(function(e) {
+    const t = (e.type || "").toLowerCase();
+    const d = (e.detail || "").toLowerCase();
+    const isGoal = t === "goal" || d.includes("normal goal") || d.includes("penalty") || d.includes("own goal");
+    if (!isGoal) return;
+    const isOwn = d.includes("own goal");
+    const tid = Number(e.teamId);
+    if (isOwn) {
+      if (tid === Number(homeId)) score.away++;
+      else if (tid === Number(awayId)) score.home++;
+    } else {
+      if (tid === Number(homeId)) score.home++;
+      else if (tid === Number(awayId)) score.away++;
+    }
+  });
+  return score;
+}
 
 async function buildAnalysisContext(match, forcedLineups, options) {
   const isLive = !!(options && options.isLive);
@@ -21,7 +43,8 @@ async function buildAnalysisContext(match, forcedLineups, options) {
     h2h,
     liveStats,
     events,
-    fixturePlayers
+    fixturePlayers,
+    fixtureStatus
   ] = await Promise.all([
     forcedLineups
       ? Promise.resolve(forcedLineups)
@@ -37,7 +60,9 @@ async function buildAnalysisContext(match, forcedLineups, options) {
 
     getFixtureEvents(matchId),
 
-    getFixturePlayers(matchId)
+    getFixturePlayers(matchId),
+
+    getFixtureStatus(matchId)
   ]);
 
   const allPlayerIds = (fixturePlayers || [])
@@ -67,10 +92,16 @@ async function buildAnalysisContext(match, forcedLineups, options) {
     seasonPlayerStats
   );
 
+  const liveScore = computeLiveScore(events, homeId, awayId);
+
   const context = {
     match,
 
     lineups,
+
+    fixtureStatus,
+
+    liveScore,
 
     recent: {
       home: homeRecent,

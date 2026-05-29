@@ -173,18 +173,35 @@ router.post("/analyze", async function(req, res) {
     const lang = req.body.lang || "fr";
     const isLive = !!req.body.isLive;
     const lineups = req.body.lineups || null;
+    const fast = req.body.fast === true;
 
     if (!match) {
-      return res.status(400).json({
-        error: "Match manquant"
-      });
+      return res.status(400).json({ error: "Match manquant" });
     }
 
     const context = await buildAnalysisContext(match, lineups, { isLive });
+    const pulse = isLive ? buildPulseLiveState(match, context) : null;
 
-    const pulse = isLive
-      ? buildPulseLiveState(match, context)
-      : null;
+    // Fast mode: return Pulse data immediately without Claude
+    if (fast) {
+      return res.json({
+        pulse,
+        sections: null,
+        fastMode: true,
+        stats: context.stats,
+        liveStats: context.liveStats,
+        lineups: context.lineups,
+        events: context.events,
+        scoring: context.scoring,
+        cards: context.cards,
+        fixtureStatus: context.fixtureStatus,
+        liveScore: context.liveScore,
+        goalThreatTable: context.goalThreatTable,
+        assistThreatTable: context.assistThreatTable,
+        penaltyRiskTable: context.penaltyRiskTable,
+        dataQuality: context.dataQuality
+      });
+    }
 
     let rawText = "";
     let parsedSections = {};
@@ -238,7 +255,9 @@ router.post("/analyze", async function(req, res) {
       assistThreatTable: context.assistThreatTable,
       penaltyRiskTable: context.penaltyRiskTable,
 
-      dataQuality: context.dataQuality
+      dataQuality: context.dataQuality,
+      fixtureStatus: context.fixtureStatus,
+      liveScore: context.liveScore
     });
   } catch (error) {
     console.error("❌ ANALYZE ERROR:", error.message);

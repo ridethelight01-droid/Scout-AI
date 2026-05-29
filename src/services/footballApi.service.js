@@ -668,6 +668,19 @@ async function getTeamStatistics(teamId, leagueId, season) {
   return data.response;
 }
 
+async function getFixtureStatus(matchId) {
+  if (!matchId) return null;
+  const data = await apiFootball("/fixtures?id=" + matchId);
+  if (!data || !data.response || !data.response[0]) return null;
+  const f = data.response[0];
+  return {
+    status: f.fixture.status.short,
+    minute: f.fixture.status.elapsed || 0,
+    homeScore: f.goals && f.goals.home !== null ? f.goals.home : null,
+    awayScore: f.goals && f.goals.away !== null ? f.goals.away : null
+  };
+}
+
 async function getH2H(homeId, awayId) {
   if (!homeId || !awayId) return [];
 
@@ -712,6 +725,7 @@ module.exports = {
   getPlayerSeasonStats,
   getPlayersSeasonStats,
   getTeamStatistics,
+  getFixtureStatus,
   getH2H,
 
   // Helpers utiles pour les autres services
