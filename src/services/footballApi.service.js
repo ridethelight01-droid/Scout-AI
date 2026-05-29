@@ -1,6 +1,10 @@
 const API_KEY = process.env.API_FOOTBALL_KEY;
 const BASE_URL = "https://v3.football.api-sports.io";
 
+// IDs fiables pour les compétitions internationales de clubs CONMEBOL
+// Indépendant du country/name retourné par l'API
+const ALLOWED_LEAGUE_IDS = [13, 11]; // 13=Copa Libertadores, 11=Copa Sudamericana
+
 const ALLOWED_RULES = [
   { country: "France", leagues: ["Ligue 1", "Ligue 2", "Coupe de France"] },
   { country: "England", leagues: ["Premier League", "Championship", "FA Cup", "League Cup"] },
@@ -56,7 +60,7 @@ const ALLOWED_RULES = [
   { country: "USA", leagues: ["Major League Soccer"] },
   { country: "Mexico", leagues: ["Liga MX"] },
 
-  { country: "World", leagues: ["World Cup"] },
+  { country: "World", leagues: ["World Cup", "Copa Libertadores", "Copa Sudamericana", "CONMEBOL Libertadores", "CONMEBOL Sudamericana"] },
   { country: "Europe", leagues: ["Euro Championship", "UEFA European Championship"] },
   { country: "Africa", leagues: ["Africa Cup of Nations"] },
   { country: "South-America", leagues: ["Copa America", "Copa Libertadores", "Copa Sudamericana"] },
@@ -70,8 +74,9 @@ function normalizeText(value) {
 function isAllowedCompetition(item) {
   const country = item?.league?.country;
   const league = item?.league?.name;
+  const leagueId = Number(item?.league?.id || 0);
 
-  if (!country || !league) return false;
+  if (!league) return false;
 
   const lowerLeague = normalizeText(league);
   const home = normalizeText(item?.teams?.home?.name);
@@ -91,6 +96,11 @@ function isAllowedCompetition(item) {
     away.endsWith(" w");
 
   if (isYouthOrWomen) return false;
+
+  // Vérification par ID en priorité (indépendant du country/name de l'API)
+  if (leagueId && ALLOWED_LEAGUE_IDS.includes(leagueId)) return true;
+
+  if (!country) return false;
 
   return ALLOWED_RULES.some(function (rule) {
     if (rule.country !== country) return false;
