@@ -111,10 +111,27 @@ function isAllowedCompetition(item) {
   });
 }
 
+const apiCache = new Map();
+
+function getCacheTtl(endpoint) {
+  if (endpoint.startsWith("/fixtures/lineups")) return 300000;     // 5 min
+  if (endpoint.startsWith("/players?id=")) return 1800000;         // 30 min
+  if (endpoint.startsWith("/fixtures?team=")) return 600000;       // 10 min
+  if (endpoint.startsWith("/fixtures/headtohead")) return 600000;  // 10 min
+  return 45000;                                                     // 45s live
+}
+
 async function apiFootball(endpoint) {
   if (!API_KEY) {
     console.error("❌ API_FOOTBALL_KEY manquante");
     return null;
+  }
+
+  const now = Date.now();
+  const cached = apiCache.get(endpoint);
+  if (cached && (now - cached.ts) < getCacheTtl(endpoint)) {
+    console.log("📦 CACHE HIT:", endpoint.slice(0, 70));
+    return cached.data;
   }
 
   try {
@@ -138,6 +155,8 @@ async function apiFootball(endpoint) {
     if (data.errors && Object.keys(data.errors).length > 0) {
       console.error("❌ API ERRORS:", JSON.stringify(data.errors, null, 2));
     }
+
+    apiCache.set(endpoint, { data, ts: Date.now() });
 
     return data;
   } catch (err) {
@@ -654,8 +673,37 @@ async function getTeamStatistics(teamId, leagueId, season) {
   return data.response;
 }
 
-async function getH2H(matchId) {
-  return [];
+async function getH2H(homeId, awayId) {
+  if (!homeId || !awayId) return [];
+
+  const data = await apiFootball(
+    "/fixtures/headtohead?h2h=" + homeId + "-" + awayId + "&last=5"
+  );
+
+  if (!data || !data.response) return [];
+
+  return data.response
+    .filter(function(item) {
+      const s = item.fixture && item.fixture.status && item.fixture.status.short;
+      return s === "FT" || s === "AET" || s === "PEN";
+    })
+    .slice(0, 5)
+    .map(function(item) {
+      const hg = item.goals && item.goals.home !== null ? item.goals.home : "-";
+      const ag = item.goals && item.goals.away !== null ? item.goals.away : "-";
+      const d = new Date(item.fixture && item.fixture.date);
+      return {
+        date: d.toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "2-digit"
+        }),
+        homeTeam: item.teams && item.teams.home ? item.teams.home.name : "",
+        awayTeam: item.teams && item.teams.away ? item.teams.away.name : "",
+        score: hg + "-" + ag,
+        competition: item.league ? item.league.name : ""
+      };
+    });
 }
 
 module.exports = {

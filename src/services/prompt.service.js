@@ -101,7 +101,14 @@ function buildCompactContext(context, pulse) {
       .slice(0, 8)
       .map(compactPlayer),
 
-    events: (context.events || []).slice(-15)
+    events: (context.events || []).slice(-15),
+
+    recent: context.recent ? {
+      home: (context.recent.home || []).slice(0, 5),
+      away: (context.recent.away || []).slice(0, 5)
+    } : null,
+
+    h2h: (context.h2h || []).slice(0, 5)
   };
 }
 
@@ -233,6 +240,14 @@ function buildPrompt(context, lang, isLive, pulse) {
     "- 2 à 3 phrases maximum.",
     "- Décris l’objectif de l’équipe extérieure.",
     "- Explique comment la formation reflète son intention.",
+
+    "",
+    "DONNÉES HISTORIQUES (si disponibles):",
+    "- recent.home / recent.away : forme récente des 5 derniers matchs (résultat V/N/D, score, adversaire).",
+    "- h2h : 5 dernières confrontations directes entre les deux équipes.",
+    "- Si recent disponible : utilise la forme récente dans planJeu et realiteMatch pour contextualiser les tendances.",
+    "- Si h2h disponible : cite les confrontations directes dans facteurDecisif si c’est pertinent.",
+    "- Ne pas inventer si les tableaux sont vides.",
 
     "",
     "RÈGLES POUR SCORERS:",

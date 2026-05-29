@@ -8,7 +8,8 @@ const {
   getPlayersSeasonStats
 } = require("./footballApi.service");
 
-async function buildAnalysisContext(match, forcedLineups) {
+async function buildAnalysisContext(match, forcedLineups, options) {
+  const isLive = !!(options && options.isLive);
   const homeId = match.homeId;
   const awayId = match.awayId;
   const matchId = match.id;
@@ -26,11 +27,11 @@ async function buildAnalysisContext(match, forcedLineups) {
       ? Promise.resolve(forcedLineups)
       : getLineups(matchId),
 
-    getTeamRecent(homeId),
+    isLive ? Promise.resolve([]) : getTeamRecent(homeId),
 
-    getTeamRecent(awayId),
+    isLive ? Promise.resolve([]) : getTeamRecent(awayId),
 
-    getH2H(matchId),
+    getH2H(homeId, awayId),
 
     getFixtureStatistics(matchId),
 

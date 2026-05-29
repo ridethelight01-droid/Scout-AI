@@ -365,9 +365,14 @@ button,input{font-family:inherit}
   padding:16px;
   display:grid;
   grid-template-columns:1fr auto 1fr;
-  align-items:center;
+  align-items:start;
   gap:14px;
   box-shadow:0 18px 50px rgba(0,0,0,.25);
+}
+
+.score-center{
+  text-align:center;
+  padding-top:2px;
 }
 
 .score-team{
@@ -1077,10 +1082,32 @@ button,input{font-family:inherit}
 
 .formation-svg{
   width:100%;
-  height:280px;
-  background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015));
-  border-radius:12px;
+  height:310px;
+  border-radius:10px;
   border:1px solid rgba(255,255,255,.06);
+  display:block;
+}
+
+.score-scorers{
+  font-family:'DM Mono',monospace;
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:.5px;
+  margin-top:5px;
+  line-height:1.5;
+}
+
+.match-heat-badge{
+  font-family:'DM Mono',monospace;
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  border:1px solid;
+  border-radius:999px;
+  padding:3px 7px;
+  white-space:nowrap;
+  flex-shrink:0;
 }
 
 .formation-intention{
@@ -1495,6 +1522,69 @@ function hexToRgba(hex,alpha){
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
 }
 
+function formatScorerLine(goals){
+  if(!goals||!goals.length) return "";
+  return goals.map(function(g){
+    var name=shortName(g.playerName||"Inconnu",12);
+    var suffix=g.isOwnGoal?" ⊕":g.isPenalty?" (P)":"";
+    return esc(name+suffix)+" "+esc(String(g.minute||""))+"'";
+  }).join(" · ");
+}
+
+function matchHeat(match){
+  var s=match.status;
+  if(s==="NS"||s==="FT"||s==="AET"||s==="PEN") return null;
+  var minute=Number(match.minute||0);
+  var h=Number(match.homeScore||0);
+  var a=Number(match.awayScore||0);
+  var total=h+a;
+  var diff=Math.abs(h-a);
+  var heat=total*20;
+  if(diff===0&&total>0) heat+=20;
+  if(diff===1) heat+=10;
+  if(minute>=80) heat+=30;
+  else if(minute>=70) heat+=18;
+  else if(minute>=60) heat+=8;
+  if(total>=3) heat+=15;
+  heat=Math.min(100,heat);
+  if(heat>=60) return {icon:"🔥",label:"HOT",color:"#A32D2D"};
+  if(heat>=30) return {icon:"⚡",label:"ACTIVE",color:"#BA7517"};
+  return {icon:"●",label:"LIVE",color:"#5a7290"};
+}
+
+function threatToProbability(score,key){
+  var s=Math.max(0,Math.min(100,score));
+  var maxPct=key==="goalThreat"?25:20;
+  return Math.max(1,Math.round(1+Math.sqrt(s/100)*(maxPct-1)));
+}
+
+function rowYPositions(numRows){
+  var plans={2:[175,265],3:[85,175,265],4:[65,140,200,265],5:[50,115,170,225,265],6:[38,90,140,188,232,265]};
+  return plans[numRows]||plans[4];
+}
+
+function buildSubMap(events,teamId){
+  var map={};
+  if(!events||!teamId) return map;
+  events.filter(function(e){return e.type==="subst"&&String(e.teamId)===String(teamId);}).forEach(function(e){
+    if(e.playerName){
+      map[String(e.playerName).toLowerCase().trim()]={subIn:e.assistName||"",minute:e.time||""};
+    }
+  });
+  return map;
+}
+
+function getSubInfo(playerName,subMap){
+  if(!playerName||!subMap) return null;
+  var pn=String(playerName).toLowerCase().trim();
+  if(subMap[pn]) return subMap[pn];
+  var parts=pn.split(/\s+/).filter(function(p){return p.length>=3;});
+  var found=Object.keys(subMap).find(function(k){
+    return parts.some(function(p){return k.includes(p)||p.includes(k.split(/\s+/).pop());});
+  });
+  return found?subMap[found]:null;
+}
+
 function trimWords(text,max){
   const words=String(text||"").split(/\s+/).filter(Boolean);
   return words.length<=max?String(text||""):words.slice(0,max).join(" ")+"…";
@@ -1691,6 +1781,10 @@ function buildMatchCard(match){
     ? `<div class="match-score-big">${match.homeScore??"-"}&nbsp;-&nbsp;${match.awayScore??"-"}</div>`
     : `<div class="match-time-big">${esc(match.time||"")}</div><div class="match-vs">VS</div>`;
 
+  // Heat signal
+  const heat=matchHeat(match);
+  const heatHtml=heat?`<span class="match-heat-badge" style="color:${heat.color};border-color:${hexToRgba(heat.color,.25)};background:${hexToRgba(heat.color,.10)}">${heat.icon} ${heat.label}</span>`:"";
+
   // Competition display
   const compDisplay=getCompetitionDisplay(match);
   let compTopHtml="";
@@ -1723,7 +1817,7 @@ function buildMatchCard(match){
     <div class="match-card" style="--matchStatusColor:${statusColor}" onclick='openMatchFromCard("${encoded}")'>
       <div class="match-card-top">
         <div class="match-status ${statusClass}">${statusText}</div>
-        ${compTopHtml}
+        <div style="display:flex;gap:6px;align-items:center">${heatHtml}${compTopHtml}</div>
       </div>
       <div class="match-row-main">
         <div class="match-team-col home">
@@ -1831,15 +1925,34 @@ function renderHero(){
   if(!currentMatch) return;
   const mount=el("scoreBannerMount");
   if(!mount) return;
-  const minute=currentMatch.status==="NS"?(currentMatch.time||""):`${currentMatch.minute||0}'`;
+  const s=currentMatch.status;
+  const isFinished=s==="FT"||s==="AET"||s==="PEN";
+  const isLive=s!=="NS"&&!isFinished;
+  const scoring=currentAnalysis?.scoring;
+  const homeScorers=formatScorerLine(scoring?.home);
+  const awayScorers=formatScorerLine(scoring?.away);
+  const scoreHtml=(isLive||isFinished)
+    ?`<div class="score-banner-score">${currentMatch.homeScore??"-"} - ${currentMatch.awayScore??"-"}</div>`
+    :`<div class="score-banner-score" style="font-size:22px;color:var(--accent)">${esc(currentMatch.time||"")}</div>`;
+  const pillHtml=isFinished
+    ?`<div class="live-pill" style="background:rgba(90,114,144,.10);border-color:rgba(90,114,144,.30)">FT</div>`
+    :isLive
+    ?`<div class="live-pill"><span class="live-dot"></span>LIVE ${currentMatch.minute||0}'</div>`
+    :`<div class="live-pill" style="background:rgba(240,180,41,.08);border-color:rgba(240,180,41,.25);color:#f0b429">À VENIR</div>`;
   mount.innerHTML=`
     <div class="score-banner">
-      <div class="score-team home">${esc(currentMatch.home)}</div>
-      <div class="score-center">
-        <div class="score-banner-score">${currentMatch.homeScore??"-"} - ${currentMatch.awayScore??"-"}</div>
-        <div class="live-pill"><span class="live-dot"></span>LIVE ${minute}</div>
+      <div>
+        <div class="score-team home">${esc(currentMatch.home)}</div>
+        ${homeScorers?`<div class="score-scorers">${homeScorers}</div>`:""}
       </div>
-      <div class="score-team away">${esc(currentMatch.away)}</div>
+      <div class="score-center">
+        ${scoreHtml}
+        ${pillHtml}
+      </div>
+      <div style="text-align:right">
+        <div class="score-team away">${esc(currentMatch.away)}</div>
+        ${awayScorers?`<div class="score-scorers">${awayScorers}</div>`:""}
+      </div>
     </div>`;
 }
 
@@ -2450,50 +2563,70 @@ async function refreshTacticalAnalysis(){
 function formationView(tacticalData){
   const lh=currentAnalysis.lineups?.home||{};
   const la=currentAnalysis.lineups?.away||{};
+  const events=currentAnalysis.events||[];
+  const homeSubs=buildSubMap(events,lh.teamId);
+  const awaySubs=buildSubMap(events,la.teamId);
   return `
     <div class="formation-grid">
       <div class="formation-card">
         <div class="formation-title">${esc(currentMatch.home)} · ${esc(lh.formation||"?")}</div>
-        ${formationSvg("#378ADD",lh)}
+        ${formationSvg("#378ADD",lh,homeSubs)}
         <div class="formation-intention">${esc(tacticalData?.intentionHome||"Intention initiale non disponible.")}</div>
       </div>
       <div class="formation-card">
         <div class="formation-title">${esc(currentMatch.away)} · ${esc(la.formation||"?")}</div>
-        ${formationSvg("#ff3358",la)}
+        ${formationSvg("#ff3358",la,awaySubs)}
         <div class="formation-intention">${esc(tacticalData?.intentionAway||"Intention initiale non disponible.")}</div>
       </div>
     </div>`;
 }
 
-function formationSvg(color,lineup){
-  const players=(lineup.players||[]).filter(function(p){ return !p.substitute; }).slice(0,11);
+function formationSvg(color,lineup,subMap){
+  subMap=subMap||{};
+  const players=(lineup.players||[]).filter(function(p){return !p.substitute;}).slice(0,11);
   const rows=formationRows(lineup.formation);
-  let index=0,y=238,pts="";
-  rows.forEach(function(n){
-    const gap=160/(n+1);
+  const yPos=rowYPositions(rows.length);
+  const uid=color.replace("#","");
+  let pts="";
+  let index=0;
+  rows.forEach(function(n,rowIdx){
+    const y=yPos[rowIdx];
+    const gap=180/(n+1);
     for(let i=1;i<=n;i++){
       const p=players[index]||{};
-      const x=20+i*gap;
-      const name=shortName(p.name||"",10);
-      const num=p.shirtNumber||"";
-      pts+=`
-        <text x="${x}" y="${y-14}" text-anchor="middle" fill="rgba(255,255,255,.75)" font-size="8" font-family="DM Mono">${esc(num)}</text>
-        <circle cx="${x}" cy="${y}" r="8" fill="${color}"/>
-        <circle cx="${x}" cy="${y}" r="14" fill="${hexToRgba(color,.14)}"/>
-        <text x="${x}" y="${y+23}" text-anchor="middle" fill="rgba(255,255,255,.82)" font-size="8">${esc(name)}</text>`;
-      index+=1;
+      const x=10+i*gap;
+      const name=shortName(p.name||"",9);
+      const num=p.shirtNumber!==null&&p.shirtNumber!==undefined?p.shirtNumber:"";
+      const sub=getSubInfo(p.name,subMap);
+      const fill=sub?"#BA7517":color;
+      pts+=`<circle cx="${x}" cy="${y}" r="17" fill="${hexToRgba(fill,.13)}"/>`;
+      pts+=`<circle cx="${x}" cy="${y}" r="11" fill="${fill}" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/>`;
+      pts+=`<text x="${x}" y="${y+3.5}" text-anchor="middle" fill="white" font-size="8" font-family="DM Mono,monospace" font-weight="700">${esc(String(num))}</text>`;
+      pts+=`<text x="${x}" y="${y+26}" text-anchor="middle" fill="rgba(255,255,255,.88)" font-size="7.5">${esc(name)}</text>`;
+      if(sub){
+        pts+=`<text x="${x+14}" y="${y-9}" text-anchor="middle" fill="#ff6b6b" font-size="7" font-family="DM Mono,monospace">↓${sub.minute}'</text>`;
+        pts+=`<text x="${x}" y="${y+37}" text-anchor="middle" fill="#1D9E75" font-size="7">↑${esc(shortName(sub.subIn||"",9))}</text>`;
+      }
+      index++;
     }
-    y-=46;
   });
-  return `
-    <svg class="formation-svg" viewBox="0 0 200 280">
-      <rect x="16" y="12" width="168" height="256" rx="10" fill="none" stroke="rgba(255,255,255,.12)"/>
-      <line x1="16" y1="140" x2="184" y2="140" stroke="rgba(255,255,255,.10)"/>
-      <circle cx="100" cy="140" r="24" fill="none" stroke="rgba(255,255,255,.08)"/>
-      <rect x="54" y="12" width="92" height="42" fill="none" stroke="rgba(255,255,255,.08)"/>
-      <rect x="54" y="226" width="92" height="42" fill="none" stroke="rgba(255,255,255,.08)"/>
-      ${pts}
-    </svg>`;
+  return `<svg class="formation-svg" viewBox="0 0 200 310">
+    <defs><linearGradient id="pg${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#071a0c"/><stop offset="100%" stop-color="#0c2e17"/>
+    </linearGradient></defs>
+    <rect width="200" height="310" fill="url(#pg${uid})" rx="10"/>
+    <rect x="12" y="8" width="176" height="294" rx="5" fill="none" stroke="rgba(255,255,255,.13)" stroke-width="1"/>
+    <line x1="12" y1="155" x2="188" y2="155" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
+    <circle cx="100" cy="155" r="26" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+    <circle cx="100" cy="155" r="2.5" fill="rgba(255,255,255,.18)"/>
+    <rect x="56" y="8" width="88" height="30" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+    <rect x="74" y="8" width="52" height="15" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+    <rect x="56" y="272" width="88" height="30" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+    <rect x="74" y="287" width="52" height="15" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
+    <rect x="88" y="8" width="24" height="6" rx="2" fill="${hexToRgba(color,.25)}"/>
+    <rect x="88" y="296" width="24" height="6" rx="2" fill="${hexToRgba(color,.15)}"/>
+    ${pts}
+  </svg>`;
 }
 
 function formationRows(f){
@@ -2548,8 +2681,9 @@ function sameTeam(a,b){
 }
 
 function playerProbCard(p,key,isHome){
-  const score=clamp(round(p[key]||p.score||0),0,100);
-  const color=score>65?"#1D9E75":score>=45?"#BA7517":"#185FA5";
+  const rawScore=clamp(round(p[key]||p.score||0),0,100);
+  const pct=threatToProbability(rawScore,key);
+  const color=pct>=18?"#1D9E75":pct>=11?"#BA7517":"#185FA5";
   const facts=key==="goalThreat"?p.goalFacts||{}:p.assistFacts||{};
   const liveLine=key==="goalThreat"?`Tirs live: ${facts.liveShots??p.shots??"—"} · Cadrés: ${facts.liveShotsOn??p.shotsOn??"—"}`:`Key passes: ${facts.liveKeyPasses??p.keyPasses??"—"} · Passes: ${facts.totalPasses??p.totalPasses??"—"}`;
   const seasonLine=key==="goalThreat"?`Saison: ${facts.goalsPerMatch??p.seasonStats?.goalsPerMatch??"—"} buts/match`:`Saison: ${facts.assistsPerMatch??p.seasonStats?.assistsPerMatch??"—"} assists/match`;
@@ -2560,8 +2694,8 @@ function playerProbCard(p,key,isHome){
         <div class="player-pos">${esc(p.position||"?")}</div>
       </div>
       <div class="player-prob-row">
-        <div class="player-bar"><div class="player-fill" style="width:${score}%;background:${color}"></div></div>
-        <div class="player-score">${score}</div>
+        <div class="player-bar"><div class="player-fill" style="width:${rawScore}%;background:${color}"></div></div>
+        <div class="player-score" style="font-size:16px">${pct}%</div>
       </div>
       <div class="player-meta">${esc(liveLine)}</div>
       <div class="player-meta">${esc(seasonLine)}</div>

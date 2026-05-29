@@ -180,7 +180,7 @@ router.post("/analyze", async function(req, res) {
       });
     }
 
-    const context = await buildAnalysisContext(match, lineups);
+    const context = await buildAnalysisContext(match, lineups, { isLive });
 
     const pulse = isLive
       ? buildPulseLiveState(match, context)
