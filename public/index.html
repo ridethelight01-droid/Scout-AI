@@ -1583,6 +1583,22 @@ function hexToRgba(hex,alpha){
   return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${alpha})`;
 }
 
+function colorTeams(text){
+  if(!currentMatch||!text) return esc(String(text||""));
+  var escaped=esc(String(text));
+  var homeEsc=esc(currentMatch.home||"");
+  var awayEsc=esc(currentMatch.away||"");
+  function escRe(s){return s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}
+  var teams=[];
+  if(homeEsc) teams.push({name:homeEsc,color:"var(--home)"});
+  if(awayEsc) teams.push({name:awayEsc,color:"var(--away)"});
+  teams.sort(function(a,b){return b.name.length-a.name.length;});
+  teams.forEach(function(t){
+    escaped=escaped.replace(new RegExp(escRe(t.name),"g"),'<span style="color:'+t.color+';font-weight:600">'+t.name+'</span>');
+  });
+  return escaped;
+}
+
 function formatScorerLine(goals){
   if(!goals||!goals.length) return "";
   return goals.map(function(g){
@@ -1666,7 +1682,7 @@ function parseClaudeObject(raw){
 function cleanHtml(html){
   if(Array.isArray(html)){
     return html.map(function(line){
-      return `<div class="pulse-read-line">${esc(line)}</div>`;
+      return `<div class="pulse-read-line">${colorTeams(line)}</div>`;
     }).join("");
   }
   html=String(html||"");
@@ -1677,7 +1693,7 @@ function cleanHtml(html){
   if(parsed){
     if(Array.isArray(parsed.live)){
       return parsed.live.map(function(line){
-        return `<div class="pulse-read-line">${esc(line)}</div>`;
+        return `<div class="pulse-read-line">${colorTeams(line)}</div>`;
       }).join("");
     }
     if(parsed.live) return esc(parsed.live).replace(/\n/g,"<br>");
@@ -2194,7 +2210,7 @@ function buildNextGoalPanel(){
         </div>
         <div class="next-goal-prob">${round(leaderChance)}%</div>
       </div>
-      <div class="next-goal-sub">${esc(text)}</div>
+      <div class="next-goal-sub">${colorTeams(text)}</div>
       <div class="next-goal-bars">
         ${nextGoalRow(currentMatch.home,homeChance,"#378ADD")}
         ${nextGoalRow(currentMatch.away,awayChance,"#ff3358")}
@@ -2224,7 +2240,7 @@ function buildDeadZonePanel(){
   return `
     <div class="dead-zone-panel">
       <div class="dead-zone-title">❄ DEAD ZONE</div>
-      <div class="dead-zone-text">${round(noGoal)}% chance que le score reste bloqué. ${esc(reason)}</div>
+      <div class="dead-zone-text">${round(noGoal)}% chance que le score reste bloqué. ${colorTeams(reason)}</div>
     </div>`;
 }
 
@@ -2245,7 +2261,7 @@ function buildLiveShiftPanel(){
   return `
     <div class="shift-panel" style="--shiftColor:${color};--shiftSoft:${hexToRgba(color,.12)};">
       <div class="shift-title">🔄 LIVE SHIFT DETECTED</div>
-      <div class="shift-text">${esc(text)}</div>
+      <div class="shift-text">${colorTeams(text)}</div>
     </div>`;
 }
 
@@ -2307,8 +2323,8 @@ function buildMetricCard(type){
         <div class="metric-label">Signal live</div>
         ${tooltip(config.tt[0],config.tt[1],config.tt[2])}
       </div>
-      <div class="metric-verdict">${esc(verdict)}</div>
-      <div class="metric-facts">${esc(facts)}</div>
+      <div class="metric-verdict">${colorTeams(verdict)}</div>
+      <div class="metric-facts">${colorTeams(facts)}</div>
       ${duelBar(currentMatch.home,config.home,true)}
       ${duelBar(currentMatch.away,config.away,false)}
       <div class="crit-badge">${crit.icon} ${crit.text}</div>
@@ -2373,8 +2389,8 @@ function buildPulseRead(){
           <div class="label-mono">PULSE ANALYSE</div>
           ${tooltip("Pulse Analyse","Lecture synthétique du tempo du match en temps réel. Mis à jour toutes les 60s.",[])}
         </div>
-        ${live.slice(0,3).map(function(line){ return `<div class="pulse-read-line">${esc(trimWords(line,14))}</div>`; }).join("")}
-        <div class="pulse-read-line signal" style="color:${signal.color}">${esc(trimWords(live[3]||signal.text,14))}</div>
+        ${live.slice(0,3).map(function(line){ return `<div class="pulse-read-line">${colorTeams(trimWords(line,14))}</div>`; }).join("")}
+        <div class="pulse-read-line signal" style="color:${signal.color}">${colorTeams(trimWords(live[3]||signal.text,14))}</div>
       </div>`;
   }
   const m=metricInputs();
@@ -2405,8 +2421,8 @@ function buildPulseRead(){
         <div class="label-mono">PULSE ANALYSE</div>
         ${tooltip("Pulse Analyse","Lecture synthétique du tempo du match en temps réel. Mis à jour toutes les 60s.",[])}
       </div>
-      ${lines.slice(0,3).map(function(l){ return `<div class="pulse-read-line">${esc(trimWords(l,12))}</div>`; }).join("")}
-      <div class="pulse-read-line signal" style="color:${signal.color}">${esc(trimWords(signal.text,12))}</div>
+      ${lines.slice(0,3).map(function(l){ return `<div class="pulse-read-line">${colorTeams(trimWords(l,12))}</div>`; }).join("")}
+      <div class="pulse-read-line signal" style="color:${signal.color}">${colorTeams(trimWords(signal.text,12))}</div>
     </div>`;
 }
 
@@ -2546,7 +2562,7 @@ function buildKeySignals(){
   return `
     <div class="key-signals">
       ${signals.map(function(s){
-        return `<div class="key-signal"><span class="signal-dot" style="background:${s.color};box-shadow:0 0 12px ${s.color}"></span><span>${esc(s.text)}</span></div>`;
+        return `<div class="key-signal"><span class="signal-dot" style="background:${s.color};box-shadow:0 0 12px ${s.color}"></span><span>${colorTeams(s.text)}</span></div>`;
       }).join("")}
     </div>`;
 }
@@ -2592,7 +2608,7 @@ function tacticalBlock(title,text,color){
   return `
     <div class="tactical-block" style="--blockColor:${color}">
       <div class="tactical-block-title">${esc(title)}</div>
-      <div class="tactical-block-text">${esc(text||"Analyse indisponible.")}</div>
+      <div class="tactical-block-text">${colorTeams(text||"Analyse indisponible.")}</div>
     </div>`;
 }
 
@@ -2635,7 +2651,7 @@ function formationView(tacticalData){
           ${formationSvgMini("#378ADD",lh,homeSubs)}
           ${buildFormationRoster(lh,homeSubs,"#378ADD")}
         </div>
-        <div class="formation-intention">${esc(tacticalData?.intentionHome||"Intention initiale non disponible.")}</div>
+        <div class="formation-intention">${colorTeams(tacticalData?.intentionHome||"Intention initiale non disponible.")}</div>
       </div>
       <div class="formation-card">
         <div class="formation-title" style="color:#ff3358">${esc(currentMatch.away)}<span style="color:var(--textDim);font-size:14px;font-weight:400"> · ${esc(la.formation||"?")}</span></div>
@@ -2643,7 +2659,7 @@ function formationView(tacticalData){
           ${formationSvgMini("#ff3358",la,awaySubs)}
           ${buildFormationRoster(la,awaySubs,"#ff3358")}
         </div>
-        <div class="formation-intention">${esc(tacticalData?.intentionAway||"Intention initiale non disponible.")}</div>
+        <div class="formation-intention">${colorTeams(tacticalData?.intentionAway||"Intention initiale non disponible.")}</div>
       </div>
     </div>`;
 }
