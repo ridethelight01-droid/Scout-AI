@@ -537,18 +537,13 @@ async function getLineups(matchId) {
 async function getTeamRecent(teamId) {
   if (!teamId) return [];
 
-  const currentYear = new Date().getFullYear();
-
   const data = await apiFootball(
-    "/fixtures?team=" + teamId + "&season=" + currentYear
+    "/fixtures?team=" + teamId + "&last=5"
   );
 
   if (!data || !data.response) return [];
 
   return data.response
-    .sort(function (a, b) {
-      return new Date(b.fixture.date) - new Date(a.fixture.date);
-    })
     .slice(0, 5)
     .map(function (item) {
       const isHome = item.teams.home.id === Number(teamId);

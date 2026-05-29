@@ -1088,6 +1088,67 @@ button,input{font-family:inherit}
   display:block;
 }
 
+.formation-layout{
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  min-width:0;
+}
+
+.formation-roster{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+}
+
+.roster-entry{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:3px 0;
+  border-bottom:.5px solid rgba(255,255,255,.05);
+  min-width:0;
+}
+
+.roster-num{
+  width:20px;
+  font-family:'DM Mono',monospace;
+  font-size:10px;
+  font-weight:700;
+  text-align:right;
+  flex-shrink:0;
+}
+
+.roster-name{
+  flex:1;
+  font-size:11.5px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:rgba(255,255,255,.88);
+  min-width:0;
+}
+
+.roster-pos{
+  font-family:'DM Mono',monospace;
+  font-size:9px;
+  color:var(--textDim);
+  flex-shrink:0;
+  width:22px;
+  text-align:right;
+}
+
+.roster-sep{
+  font-family:'DM Mono',monospace;
+  font-size:9px;
+  letter-spacing:1.2px;
+  color:var(--textDim);
+  text-transform:uppercase;
+  margin:7px 0 4px;
+  padding-top:6px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+
 .score-scorers{
   font-family:'DM Mono',monospace;
   font-size:10px;
@@ -2569,64 +2630,94 @@ function formationView(tacticalData){
   return `
     <div class="formation-grid">
       <div class="formation-card">
-        <div class="formation-title">${esc(currentMatch.home)} · ${esc(lh.formation||"?")}</div>
-        ${formationSvg("#378ADD",lh,homeSubs)}
+        <div class="formation-title" style="color:#378ADD">${esc(currentMatch.home)}<span style="color:var(--textDim);font-size:14px;font-weight:400"> · ${esc(lh.formation||"?")}</span></div>
+        <div class="formation-layout">
+          ${formationSvgMini("#378ADD",lh,homeSubs)}
+          ${buildFormationRoster(lh,homeSubs,"#378ADD")}
+        </div>
         <div class="formation-intention">${esc(tacticalData?.intentionHome||"Intention initiale non disponible.")}</div>
       </div>
       <div class="formation-card">
-        <div class="formation-title">${esc(currentMatch.away)} · ${esc(la.formation||"?")}</div>
-        ${formationSvg("#ff3358",la,awaySubs)}
+        <div class="formation-title" style="color:#ff3358">${esc(currentMatch.away)}<span style="color:var(--textDim);font-size:14px;font-weight:400"> · ${esc(la.formation||"?")}</span></div>
+        <div class="formation-layout">
+          ${formationSvgMini("#ff3358",la,awaySubs)}
+          ${buildFormationRoster(la,awaySubs,"#ff3358")}
+        </div>
         <div class="formation-intention">${esc(tacticalData?.intentionAway||"Intention initiale non disponible.")}</div>
       </div>
     </div>`;
 }
 
-function formationSvg(color,lineup,subMap){
+function rowYMini(numRows){
+  var p={2:[118,152],3:[62,112,152],4:[46,88,122,152],5:[34,73,106,134,154],6:[26,60,90,116,138,155]};
+  return p[numRows]||p[4];
+}
+
+function formationSvgMini(color,lineup,subMap){
   subMap=subMap||{};
-  const players=(lineup.players||[]).filter(function(p){return !p.substitute;}).slice(0,11);
-  const rows=formationRows(lineup.formation);
-  const yPos=rowYPositions(rows.length);
-  const uid=color.replace("#","");
-  let pts="";
-  let index=0;
+  var players=(lineup.players||[]).filter(function(p){return !p.substitute;}).slice(0,11);
+  var rows=formationRows(lineup.formation);
+  var yPos=rowYMini(rows.length);
+  var uid=color.replace("#","");
+  var pts="";
+  var index=0;
   rows.forEach(function(n,rowIdx){
-    const y=yPos[rowIdx];
-    const gap=180/(n+1);
-    for(let i=1;i<=n;i++){
-      const p=players[index]||{};
-      const x=10+i*gap;
-      const name=shortName(p.name||"",9);
-      const num=p.shirtNumber!==null&&p.shirtNumber!==undefined?p.shirtNumber:"";
-      const sub=getSubInfo(p.name,subMap);
-      const fill=sub?"#BA7517":color;
-      pts+=`<circle cx="${x}" cy="${y}" r="17" fill="${hexToRgba(fill,.13)}"/>`;
-      pts+=`<circle cx="${x}" cy="${y}" r="11" fill="${fill}" stroke="rgba(255,255,255,.22)" stroke-width="1.5"/>`;
-      pts+=`<text x="${x}" y="${y+3.5}" text-anchor="middle" fill="white" font-size="8" font-family="DM Mono,monospace" font-weight="700">${esc(String(num))}</text>`;
-      pts+=`<text x="${x}" y="${y+26}" text-anchor="middle" fill="rgba(255,255,255,.88)" font-size="7.5">${esc(name)}</text>`;
-      if(sub){
-        pts+=`<text x="${x+14}" y="${y-9}" text-anchor="middle" fill="#ff6b6b" font-size="7" font-family="DM Mono,monospace">↓${sub.minute}'</text>`;
-        pts+=`<text x="${x}" y="${y+37}" text-anchor="middle" fill="#1D9E75" font-size="7">↑${esc(shortName(sub.subIn||"",9))}</text>`;
-      }
+    var y=yPos[rowIdx];
+    var gap=96/(n+1);
+    for(var i=1;i<=n;i++){
+      var x=7+i*gap;
+      var p=players[index]||{};
+      var num=p.shirtNumber!==null&&p.shirtNumber!==undefined?p.shirtNumber:"";
+      var sub=getSubInfo(p.name,subMap);
+      var fill=sub?"#BA7517":color;
+      pts+=`<circle cx="${x}" cy="${y}" r="8" fill="${hexToRgba(fill,.18)}"/>`;
+      pts+=`<circle cx="${x}" cy="${y}" r="6.5" fill="${fill}" stroke="rgba(255,255,255,.22)" stroke-width="1"/>`;
+      pts+=`<text x="${x}" y="${y+2.5}" text-anchor="middle" fill="white" font-size="6.5" font-family="DM Mono,monospace" font-weight="700">${esc(String(num))}</text>`;
       index++;
     }
   });
-  return `<svg class="formation-svg" viewBox="0 0 200 310">
-    <defs><linearGradient id="pg${uid}" x1="0" y1="0" x2="0" y2="1">
+  return `<svg viewBox="0 0 110 168" style="width:110px;height:168px;flex-shrink:0;border-radius:8px;overflow:visible">
+    <defs><linearGradient id="mpg${uid}" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#071a0c"/><stop offset="100%" stop-color="#0c2e17"/>
     </linearGradient></defs>
-    <rect width="200" height="310" fill="url(#pg${uid})" rx="10"/>
-    <rect x="12" y="8" width="176" height="294" rx="5" fill="none" stroke="rgba(255,255,255,.13)" stroke-width="1"/>
-    <line x1="12" y1="155" x2="188" y2="155" stroke="rgba(255,255,255,.08)" stroke-width="1"/>
-    <circle cx="100" cy="155" r="26" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
-    <circle cx="100" cy="155" r="2.5" fill="rgba(255,255,255,.18)"/>
-    <rect x="56" y="8" width="88" height="30" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
-    <rect x="74" y="8" width="52" height="15" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
-    <rect x="56" y="272" width="88" height="30" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
-    <rect x="74" y="287" width="52" height="15" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>
-    <rect x="88" y="8" width="24" height="6" rx="2" fill="${hexToRgba(color,.25)}"/>
-    <rect x="88" y="296" width="24" height="6" rx="2" fill="${hexToRgba(color,.15)}"/>
+    <rect width="110" height="168" fill="url(#mpg${uid})" rx="8"/>
+    <rect x="7" y="5" width="96" height="158" rx="3" fill="none" stroke="rgba(255,255,255,.13)"/>
+    <line x1="7" y1="84" x2="103" y2="84" stroke="rgba(255,255,255,.07)"/>
+    <circle cx="55" cy="84" r="16" fill="none" stroke="rgba(255,255,255,.06)"/>
+    <circle cx="55" cy="84" r="2" fill="rgba(255,255,255,.18)"/>
+    <rect x="30" y="5" width="50" height="19" fill="none" stroke="rgba(255,255,255,.07)"/>
+    <rect x="30" y="144" width="50" height="19" fill="none" stroke="rgba(255,255,255,.07)"/>
     ${pts}
   </svg>`;
+}
+
+function buildFormationRoster(lineup,subMap,color){
+  subMap=subMap||{};
+  var starters=(lineup.players||[]).filter(function(p){return !p.substitute;}).slice(0,11);
+  var subsList=(lineup.players||[]).filter(function(p){return p.substitute;});
+
+  var rows=starters.map(function(p){
+    var sub=getSubInfo(p.name,subMap);
+    if(sub){
+      return `<div class="roster-entry">
+        <span class="roster-num" style="color:#BA7517">${esc(String(p.shirtNumber||""))}</span>
+        <span class="roster-name"><span style="text-decoration:line-through;color:var(--textDim)">${esc(p.name||"")}</span> <span style="color:#ff6b6b;font-family:'DM Mono',monospace;font-size:9px">↓${sub.minute}'</span></span>
+        <span class="roster-pos">${esc(p.position||"")}</span>
+      </div>
+      <div class="roster-entry">
+        <span class="roster-num" style="color:#1D9E75">↑</span>
+        <span class="roster-name" style="color:#1D9E75">${esc(sub.subIn||"—")}</span>
+        <span class="roster-pos"></span>
+      </div>`;
+    }
+    return `<div class="roster-entry">
+      <span class="roster-num" style="color:${color}">${esc(String(p.shirtNumber||""))}</span>
+      <span class="roster-name">${esc(p.name||"")}</span>
+      <span class="roster-pos">${esc(p.position||"")}</span>
+    </div>`;
+  }).join("");
+
+  return `<div class="formation-roster">${rows}</div>`;
 }
 
 function formationRows(f){

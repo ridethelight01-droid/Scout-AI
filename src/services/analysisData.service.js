@@ -27,9 +27,9 @@ async function buildAnalysisContext(match, forcedLineups, options) {
       ? Promise.resolve(forcedLineups)
       : getLineups(matchId),
 
-    isLive ? Promise.resolve([]) : getTeamRecent(homeId),
+    getTeamRecent(homeId),
 
-    isLive ? Promise.resolve([]) : getTeamRecent(awayId),
+    getTeamRecent(awayId),
 
     getH2H(homeId, awayId),
 
