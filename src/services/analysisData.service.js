@@ -6,7 +6,8 @@ const {
   getFixtureEvents,
   getFixturePlayers,
   getPlayersSeasonStats,
-  getFixtureStatus
+  getFixtureStatus,
+  getTeamStatistics
 } = require("./footballApi.service");
 
 function computeLiveScore(events, homeId, awayId) {
@@ -36,6 +37,9 @@ async function buildAnalysisContext(match, forcedLineups, options) {
   const awayId = match.awayId;
   const matchId = match.id;
 
+  const leagueId = match.leagueId || null;
+  const season = match.season || new Date().getFullYear();
+
   const [
     lineups,
     homeRecent,
@@ -44,7 +48,9 @@ async function buildAnalysisContext(match, forcedLineups, options) {
     liveStats,
     events,
     fixturePlayers,
-    fixtureStatus
+    fixtureStatus,
+    homeTeamStats,
+    awayTeamStats
   ] = await Promise.all([
     forcedLineups
       ? Promise.resolve(forcedLineups)
@@ -62,7 +68,15 @@ async function buildAnalysisContext(match, forcedLineups, options) {
 
     getFixturePlayers(matchId),
 
-    getFixtureStatus(matchId)
+    getFixtureStatus(matchId),
+
+    leagueId
+      ? getTeamStatistics(homeId, leagueId, season).catch(function() { return null; })
+      : Promise.resolve(null),
+
+    leagueId
+      ? getTeamStatistics(awayId, leagueId, season).catch(function() { return null; })
+      : Promise.resolve(null)
   ]);
 
   const allPlayerIds = (fixturePlayers || [])
@@ -93,6 +107,12 @@ async function buildAnalysisContext(match, forcedLineups, options) {
   );
 
   const liveScore = computeLiveScore(events, homeId, awayId);
+
+  const goalWindow = computeGoalWindowAnalysis(
+    homeTeamStats,
+    awayTeamStats,
+    playerModels.goalThreatTable
+  );
 
   const context = {
     match,
@@ -131,6 +151,8 @@ async function buildAnalysisContext(match, forcedLineups, options) {
     assistThreatTable: playerModels.assistThreatTable,
 
     penaltyRiskTable: playerModels.penaltyRiskTable,
+
+    goalWindow,
 
     dataQuality: {
       hasLineups: !!(
@@ -783,6 +805,76 @@ function buildPlayerModels(
     goalThreatTable,
     assistThreatTable,
     penaltyRiskTable
+  };
+}
+
+function computeGoalWindowAnalysis(homeStats, awayStats, goalThreatTable) {
+  const WINDOWS = ["0-15", "16-30", "31-45", "46-60", "61-75", "76-90"];
+
+  if (!homeStats || !awayStats) {
+    return { available: false };
+  }
+
+  const homeGames = number(homeStats.fixtures && homeStats.fixtures.played && homeStats.fixtures.played.total, 1) || 1;
+  const awayGames = number(awayStats.fixtures && awayStats.fixtures.played && awayStats.fixtures.played.total, 1) || 1;
+
+  const homeForMin  = (homeStats.goals && homeStats.goals.for  && homeStats.goals.for.minute)  || {};
+  const homeAgMin   = (homeStats.goals && homeStats.goals.against && homeStats.goals.against.minute) || {};
+  const awayForMin  = (awayStats.goals && awayStats.goals.for  && awayStats.goals.for.minute)  || {};
+  const awayAgMin   = (awayStats.goals && awayStats.goals.against && awayStats.goals.against.minute) || {};
+
+  const windowData = WINDOWS.map(function(w) {
+    const hScored    = number((homeForMin[w] && homeForMin[w].total), 0) / homeGames;
+    const hConceded  = number((homeAgMin[w]  && homeAgMin[w].total),  0) / homeGames;
+    const aScored    = number((awayForMin[w] && awayForMin[w].total), 0) / awayGames;
+    const aConceded  = number((awayAgMin[w]  && awayAgMin[w].total),  0) / awayGames;
+
+    const homeAttack = (hScored + aConceded) / 2;
+    const awayAttack = (aScored + hConceded) / 2;
+    const combined   = homeAttack + awayAttack;
+
+    return {
+      window:     w,
+      homeAttack: Math.round(homeAttack * 100) / 100,
+      awayAttack: Math.round(awayAttack * 100) / 100,
+      combined:   Math.round(combined * 100) / 100,
+      likelyTeam: homeAttack >= awayAttack ? "home" : "away"
+    };
+  });
+
+  const maxCombined = Math.max.apply(null, windowData.map(function(w) { return w.combined; })) || 0.01;
+
+  const processed = windowData.map(function(w) {
+    const rel = w.combined / maxCombined;
+    return Object.assign({}, w, {
+      relativeScore: Math.round(rel * 100) / 100,
+      probLevel:     rel >= 0.75 ? "high" : rel >= 0.45 ? "medium" : "low",
+      confidence:    rel >= 0.85 ? 5 : rel >= 0.70 ? 4 : rel >= 0.50 ? 3 : rel >= 0.30 ? 2 : 1
+    });
+  });
+
+  const hotIdx = windowData.reduce(function(maxI, w, i) {
+    return w.combined > windowData[maxI].combined ? i : maxI;
+  }, 0);
+
+  const homeTopScorer = (goalThreatTable || []).find(function(p) { return p.side === "home"; });
+  const awayTopScorer = (goalThreatTable || []).find(function(p) { return p.side === "away"; });
+
+  return {
+    available:      true,
+    windows:        processed,
+    hotWindow:      WINDOWS[hotIdx],
+    hotWindowIdx:   hotIdx,
+    homeTopScorer:  homeTopScorer ? { name: homeTopScorer.name, goalThreat: homeTopScorer.goalThreat } : null,
+    awayTopScorer:  awayTopScorer ? { name: awayTopScorer.name, goalThreat: awayTopScorer.goalThreat } : null,
+    homeGames,
+    awayGames,
+    homeAvgGoals:   homeStats.goals && homeStats.goals.for && homeStats.goals.for.average
+      ? homeStats.goals.for.average.total || "0"
+      : "0",
+    awayAvgGoals:   awayStats.goals && awayStats.goals.for && awayStats.goals.for.average
+      ? awayStats.goals.for.average.total || "0"
+      : "0"
   };
 }
 

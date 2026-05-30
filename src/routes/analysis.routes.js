@@ -3,6 +3,7 @@ const { buildAnalysisContext } = require("../services/analysisData.service");
 const { buildPrompt } = require("../services/prompt.service");
 const { askClaude } = require("../services/anthropic.service");
 const { buildPulseLiveState } = require("../services/pulseEngine.service");
+const { clearFixtureCache } = require("../services/footballApi.service");
 
 const router = express.Router();
 
@@ -174,9 +175,14 @@ router.post("/analyze", async function(req, res) {
     const isLive = !!req.body.isLive;
     const lineups = req.body.lineups || null;
     const fast = req.body.fast === true;
+    const noCache = !!req.body.noCache;
 
     if (!match) {
       return res.status(400).json({ error: "Match manquant" });
+    }
+
+    if (noCache && isLive && match.id) {
+      clearFixtureCache(match.id);
     }
 
     const context = await buildAnalysisContext(match, lineups, { isLive });
@@ -199,6 +205,7 @@ router.post("/analyze", async function(req, res) {
         goalThreatTable: context.goalThreatTable,
         assistThreatTable: context.assistThreatTable,
         penaltyRiskTable: context.penaltyRiskTable,
+        goalWindow: context.goalWindow,
         dataQuality: context.dataQuality
       });
     }
@@ -254,6 +261,7 @@ router.post("/analyze", async function(req, res) {
       goalThreatTable: context.goalThreatTable,
       assistThreatTable: context.assistThreatTable,
       penaltyRiskTable: context.penaltyRiskTable,
+      goalWindow: context.goalWindow,
 
       dataQuality: context.dataQuality,
       fixtureStatus: context.fixtureStatus,

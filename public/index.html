@@ -1559,6 +1559,42 @@ button,input{font-family:inherit}
     text-align:left;
   }
 }
+
+/* ─── GOAL WINDOW ─────────────────────────────── */
+.gw-timeline{display:grid;gap:6px;margin:12px 0}
+.gw-row{display:grid;grid-template-columns:44px 1fr 52px;gap:8px;align-items:center}
+.gw-label{font-family:'DM Mono',monospace;font-size:11px;color:var(--textDim);white-space:nowrap}
+.gw-bar-wrap{background:rgba(255,255,255,.07);border-radius:999px;height:14px;overflow:hidden;position:relative}
+.gw-bar-fill{height:100%;border-radius:999px;transition:width .8s ease}
+.gw-pct{font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:900;text-align:right}
+.gw-hot-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(163,45,45,.15);border:1px solid rgba(163,45,45,.35);
+  border-radius:999px;padding:5px 12px;
+  font-family:'DM Mono',monospace;font-size:10px;font-weight:700;
+  color:#ff4444;text-transform:uppercase;letter-spacing:1px;
+  animation:pulseLive 1.4s infinite;
+}
+.gw-predictions{display:grid;gap:10px;margin-top:14px}
+.gw-pred-card{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:12px;display:flex;flex-direction:column;gap:6px;
+}
+.gw-pred-top{display:flex;justify-content:space-between;align-items:center}
+.gw-pred-window{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:900}
+.gw-pred-stars{color:#ffc820;font-size:14px;letter-spacing:2px}
+.gw-pred-team{font-size:13px;font-weight:700}
+.gw-pred-scorer{font-size:12px;color:var(--muted)}
+.gw-stats-row{display:flex;gap:16px;margin-top:10px}
+.gw-stat{font-size:11px;color:var(--textDim)}
+.gw-stat strong{color:white;font-size:13px}
+.gw-unavailable{color:var(--textDim);padding:20px;text-align:center;font-family:'DM Mono',monospace;font-size:12px}
+
+/* ─── LIVE UPDATE INDICATOR ───────────────────── */
+.live-update-ts{
+  font-family:'DM Mono',monospace;font-size:10px;color:var(--textDim);
+  letter-spacing:.8px;margin-top:4px;text-align:center;
+}
 </style>
 </head>
 
@@ -1589,6 +1625,7 @@ button,input{font-family:inherit}
   <div class="tabs">
     <button class="tab active" onclick="showTab('live', this)">LIVE</button>
     <button class="tab" onclick="showTab('tactical', this)">TACTIQUE</button>
+    <button class="tab" onclick="showTab('goalwindow', this)">GOAL WINDOW</button>
     <button class="tab" onclick="showTab('scorers', this)">BUTEURS</button>
     <button class="tab" onclick="showTab('assists', this)">PASSEURS</button>
     <button class="tab" onclick="showTab('penalties', this)">PENALTIES</button>
@@ -1612,6 +1649,13 @@ let previousPulseSnapshot = null;
 let lastGoalCount = -1;
 let postGoalCooldown = false;
 let postGoalRefreshCount = 0;
+
+let livePollingInterval = null;
+let lastUpdateTimestamp = null;
+
+let tacticalRetryCount = 0;
+let tacticalCacheTs = 0;
+let tacticalError = false;
 
 function el(id){ return document.getElementById(id); }
 
@@ -2060,29 +2104,36 @@ function openMatchFromCard(encoded){
 }
 
 async function openMatch(match){
+  stopLivePolling();
   currentMatch=match;
   currentAnalysis=null;
   currentTab="live";
   tacticalCache=null;
+  tacticalCacheTs=0;
+  tacticalError=false;
+  tacticalRetryCount=0;
   lastTacticalMinute=null;
   previousPulseSnapshot=null;
   lastGoalCount=-1;
   postGoalCooldown=false;
   postGoalRefreshCount=0;
+  lastUpdateTimestamp=null;
   el("matchScreen").classList.remove("active");
   el("analysisScreen").classList.add("active");
   document.querySelectorAll(".tab").forEach(function(t){ t.classList.remove("active"); });
   document.querySelector(".tab").classList.add("active");
   renderHero();
-  await loadPulse();
+  await loadPulse(false);
+  startLivePolling();
 }
 
-async function loadPulse(){
+async function loadPulse(noCache){
   if(isLoading) return;
   isLoading=true;
-  el("content").innerHTML=`<div class="skeleton"><div class="skeleton-line w60"></div><div class="skeleton-line w80"></div><div class="skeleton-line"></div></div>`;
+  const isLiveMatch=currentMatch.status==="1H"||currentMatch.status==="2H"||currentMatch.status==="HT";
   const isLive=currentMatch.status!=="NS";
-  const body={match:currentMatch,lang:"fr",isLive};
+  const nc=!!(noCache&&isLiveMatch);
+  const body={match:currentMatch,lang:"fr",isLive,noCache:nc};
 
   // ── Phase 1 : Pulse local sans Claude (~1-2s) ──────────
   try{
@@ -2090,6 +2141,7 @@ async function loadPulse(){
     const p1=await r1.json();
     if(currentAnalysis&&currentAnalysis.pulse) previousPulseSnapshot=currentAnalysis.pulse;
     currentAnalysis=p1;
+    lastUpdateTimestamp=Date.now();
     updateMatchFromAnalysis(p1);
     applyGoalDetection(p1);
     renderHero();
@@ -2103,7 +2155,8 @@ async function loadPulse(){
   try{
     const r2=await fetch(API+"/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     const p2=await r2.json();
-    currentAnalysis={...p2,pulse:p2.pulse||currentAnalysis?.pulse};
+    currentAnalysis={...p2,pulse:p2.pulse||currentAnalysis?.pulse,goalWindow:p2.goalWindow||currentAnalysis?.goalWindow};
+    lastUpdateTimestamp=Date.now();
     updateMatchFromAnalysis(p2);
     applyGoalDetection(p2);
     renderHero();
@@ -2111,6 +2164,31 @@ async function loadPulse(){
   }catch(e){}
 
   isLoading=false;
+}
+
+function startLivePolling(){
+  stopLivePolling();
+  if(!currentMatch) return;
+  const s=currentMatch.status;
+  if(s!=="1H"&&s!=="2H"&&s!=="HT") return;
+  livePollingInterval=setInterval(async function(){
+    if(!currentMatch){stopLivePolling();return;}
+    const cs=currentMatch.status;
+    if(cs!=="1H"&&cs!=="2H"&&cs!=="HT"){stopLivePolling();return;}
+    await loadPulse(true);
+  },30000);
+}
+
+function stopLivePolling(){
+  if(livePollingInterval){clearInterval(livePollingInterval);livePollingInterval=null;}
+}
+
+function formatLastUpdate(){
+  if(!lastUpdateTimestamp) return "";
+  const sec=Math.round((Date.now()-lastUpdateTimestamp)/1000);
+  if(sec<5) return "à l'instant";
+  if(sec<60) return "il y a "+sec+"s";
+  return "il y a "+(Math.floor(sec/60))+"min";
 }
 
 function renderHero(){
@@ -2127,10 +2205,11 @@ function renderHero(){
   const scoreHtml=(isLive||isFinished)
     ?`<div class="score-banner-score">${currentMatch.homeScore??"-"} - ${currentMatch.awayScore??"-"}</div>`
     :`<div class="score-banner-score" style="font-size:22px;color:var(--accent)">${esc(currentMatch.time||"")}</div>`;
+  const updateTs=isLive&&lastUpdateTimestamp?`<div class="live-update-ts">Mis à jour ${formatLastUpdate()}</div>`:"";
   const pillHtml=isFinished
     ?`<div class="live-pill" style="background:rgba(90,114,144,.10);border-color:rgba(90,114,144,.30)">FT</div>`
     :isLive
-    ?`<div class="live-pill"><span class="live-dot"></span>LIVE ${currentMatch.minute||0}'</div>`
+    ?`<div class="live-pill"><span class="live-dot"></span>LIVE ${currentMatch.minute||0}'</div>${updateTs}`
     :`<div class="live-pill" style="background:rgba(240,180,41,.08);border-color:rgba(240,180,41,.25);color:#f0b429">À VENIR</div>`;
   function cardLine(c){
     var parts=[];
@@ -2170,6 +2249,7 @@ function renderCurrentTab(){
   if(!currentAnalysis) return;
   if(currentTab==="live") renderLive();
   if(currentTab==="tactical") renderTactical();
+  if(currentTab==="goalwindow") renderGoalWindow();
   if(currentTab==="scorers") renderScorersTab();
   if(currentTab==="assists") renderAssistsTab();
   if(currentTab==="penalties") renderPenaltiesTab();
@@ -2767,9 +2847,63 @@ function buildKeySignals(){
 }
 
 /* ─── TACTICAL ────────────────────────────────── */
+function hasTacticalData(d){
+  if(!d) return false;
+  return !!(d.planJeu||d.realiteMatch||d.evolutionTactique||d.facteurDecisif);
+}
+
 function renderTactical(){
-  if(tacticalLoading){ el("content").innerHTML=skeletonBlock(); return; }
-  const data=tacticalCache||buildTacticalFromSections()||buildTacticalFallback();
+  const now=Date.now();
+  const cacheValid=tacticalCache&&hasTacticalData(tacticalCache)&&(now-tacticalCacheTs)<60000;
+
+  // Use valid cache
+  if(cacheValid){
+    renderTacticalContent(tacticalCache);
+    return;
+  }
+
+  // Try to get from current analysis sections
+  const fromSections=buildTacticalFromSections();
+  if(fromSections&&hasTacticalData(fromSections)){
+    tacticalCache=fromSections;
+    tacticalCacheTs=now;
+    renderTacticalContent(fromSections);
+    return;
+  }
+
+  // Show error only after 3 failures AND no cache at all
+  if(tacticalError&&!tacticalCache){
+    el("content").innerHTML=`
+      <div class="pulse-stack">
+        <div class="panel" style="text-align:center;padding:28px">
+          <div style="font-family:'DM Mono',monospace;font-size:12px;color:var(--textDim);letter-spacing:1px;margin-bottom:12px">DONNÉES TACTIQUES INSUFFISANTES</div>
+          <div style="font-size:13px;color:rgba(255,255,255,.6);margin-bottom:16px">L'analyse tactique n'a pas pu être générée après 3 tentatives.</div>
+          <button class="update-btn" onclick="resetAndRefreshTactical()">⟳ Réessayer</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  // Show spinner while loading; auto-trigger load if not already loading
+  el("content").innerHTML=`
+    <div class="pulse-stack">
+      <div class="skeleton">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+          <span class="live-dot"></span>
+          <span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--textDim);letter-spacing:1px">
+            ANALYSE TACTIQUE EN COURS${tacticalRetryCount>0?" · Tentative "+(tacticalRetryCount+1)+"/3":""}
+          </span>
+        </div>
+        <div class="skeleton-line w80"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line w60"></div>
+      </div>
+    </div>`;
+
+  if(!tacticalLoading){ loadTacticalWithRetry(); }
+}
+
+function renderTacticalContent(data){
   el("content").innerHTML=`
     <div class="pulse-stack">
       <div class="tactical-head">
@@ -2777,7 +2911,7 @@ function renderTactical(){
           <div class="section-title" style="margin:0">LECTURE TACTIQUE</div>
           <div class="label-mono">${lastTacticalMinute?`Dernière analyse : ${lastTacticalMinute}'`:"Analyse live disponible"}</div>
         </div>
-        <button class="update-btn" onclick="refreshTacticalAnalysis()">⟳ Mettre à jour · ${currentMatch.minute||0}'</button>
+        <button class="update-btn" onclick="resetAndRefreshTactical()">⟳ Mettre à jour · ${currentMatch.minute||0}'</button>
       </div>
       ${formationView(data)}
       <div class="tactical-blocks">
@@ -2786,8 +2920,57 @@ function renderTactical(){
         ${tacticalBlock("ÉVOLUTION TACTIQUE",data.evolutionTactique,"#1D9E75")}
         ${tacticalBlock("FACTEUR DÉCISIF",data.facteurDecisif,"#A32D2D")}
       </div>
-      <div class="footer-pulse">SCOUT IA · Mise à jour toutes les 60s</div>
+      <div class="footer-pulse">SCOUT IA · Cache 60s</div>
     </div>`;
+}
+
+async function loadTacticalWithRetry(){
+  tacticalLoading=true;
+  tacticalError=false;
+  const MAX=3;
+  while(tacticalRetryCount<MAX){
+    try{
+      const res=await fetch(API+"/api/analyze",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({match:currentMatch,lang:"fr",isLive:true,mode:"tactical"})
+      });
+      const d=await res.json();
+      const raw=d?.sections?.tacticalJson||d?.sections?.tactical;
+      let data=null;
+      if(raw&&typeof raw==="object"&&hasTacticalData(raw)){
+        data={planJeu:raw.planJeu||"",realiteMatch:raw.realiteMatch||"",evolutionTactique:raw.evolutionTactique||"",facteurDecisif:raw.facteurDecisif||"",intentionHome:raw.intentionHome||"",intentionAway:raw.intentionAway||""};
+      }
+      if(!data) data=buildTacticalFromSections();
+      if(data&&hasTacticalData(data)){
+        tacticalCache=data;
+        tacticalCacheTs=Date.now();
+        lastTacticalMinute=currentMatch.minute||0;
+        tacticalLoading=false;
+        if(currentTab==="tactical") renderTactical();
+        return;
+      }
+    }catch(e){}
+    tacticalRetryCount++;
+    if(tacticalRetryCount<MAX){
+      if(currentTab==="tactical") renderTactical();
+      await new Promise(function(r){setTimeout(r,2000);});
+    }
+  }
+  // All retries failed — use fallback as last resort cache
+  const fallback=buildTacticalFallback();
+  tacticalCache=fallback;
+  tacticalCacheTs=Date.now();
+  tacticalError=true;
+  tacticalLoading=false;
+  if(currentTab==="tactical") renderTactical();
+}
+
+function resetAndRefreshTactical(){
+  tacticalCache=null;
+  tacticalCacheTs=0;
+  tacticalError=false;
+  tacticalRetryCount=0;
+  renderTactical();
 }
 
 function buildTacticalFromSections(){
@@ -2825,16 +3008,6 @@ function buildTacticalFallback(){
   };
 }
 
-async function refreshTacticalAnalysis(){
-  tacticalLoading=true;renderTactical();
-  try{
-    const res=await fetch(API+"/api/analyze",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({match:currentMatch,lang:"fr",isLive:true,mode:"tactical"})});
-    const d=await res.json();
-    tacticalCache=d?.sections?.tacticalJson||buildTacticalFromSections()||buildTacticalFallback();
-    lastTacticalMinute=currentMatch.minute||0;
-  }catch(e){ tacticalCache=buildTacticalFallback(); }
-  tacticalLoading=false;renderTactical();
-}
 
 function formationView(tacticalData){
   const lh=currentAnalysis.lineups?.home||{};
@@ -2942,6 +3115,102 @@ function formationRows(f){
 
 function skeletonBlock(){
   return `<div class="skeleton"><div class="skeleton-line w60"></div><div class="skeleton-line"></div><div class="skeleton-line w80"></div><div class="skeleton-line"></div></div>`;
+}
+
+/* ─── GOAL WINDOW ─────────────────────────────── */
+function renderGoalWindow(){
+  const gw=currentAnalysis?.goalWindow;
+
+  if(!gw||!gw.available){
+    el("content").innerHTML=`
+      <div class="pulse-stack">
+        <div class="panel">
+          <div class="panel-title">⚽ GOAL WINDOW</div>
+          <div class="gw-unavailable">Données historiques insuffisantes pour ce match.<br>Disponible après récupération des stats saison.</div>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const WINDOW_COLORS={
+    high:{bar:"#1D9E75",text:"#1D9E75"},
+    medium:{bar:"#BA7517",text:"#BA7517"},
+    low:{bar:"#2a3f5f",text:"#5a7290"}
+  };
+
+  const homeColor="var(--home)";
+  const awayColor="var(--away)";
+
+  function teamName(side){ return side==="home"?currentMatch.home:currentMatch.away; }
+  function teamColor(side){ return side==="home"?homeColor:awayColor; }
+
+  function gwRow(w){
+    const c=WINDOW_COLORS[w.probLevel]||WINDOW_COLORS.low;
+    const isHot=w.window===gw.hotWindow;
+    const pct=Math.round(w.relativeScore*100);
+    const teamLabel=`<span style="color:${teamColor(w.likelyTeam)};font-weight:700">${esc(teamName(w.likelyTeam))}</span>`;
+    return `
+      <div class="gw-row" style="${isHot?"border-left:2px solid #ff4444;padding-left:6px;margin-left:-8px":""}">
+        <div class="gw-label" style="${isHot?"color:#ff4444;font-weight:700":""}">${esc(w.window)}'${isHot?" 🔥":""}</div>
+        <div>
+          <div class="gw-bar-wrap">
+            <div class="gw-bar-fill" style="width:${pct}%;background:${c.bar}"></div>
+          </div>
+          <div style="font-size:10px;color:var(--textDim);margin-top:3px">${teamLabel}</div>
+        </div>
+        <div class="gw-pct" style="color:${c.text}">${pct}%</div>
+      </div>`;
+  }
+
+  // Top 2 prediction windows (highest combined)
+  const sorted=[...gw.windows].sort(function(a,b){return b.combined-a.combined;}).slice(0,2);
+
+  function stars(n){
+    var s="";
+    for(var i=0;i<5;i++) s+=i<n?"★":"☆";
+    return s;
+  }
+
+  function predCard(w,idx){
+    const scorer=w.likelyTeam==="home"?gw.homeTopScorer:gw.awayTopScorer;
+    const isHot=w.window===gw.hotWindow;
+    return `
+      <div class="gw-pred-card" style="${isHot?"border-color:rgba(255,68,68,.35)":""}">
+        ${isHot?`<div class="gw-hot-badge">🔥 HOT WINDOW</div>`:""}
+        <div class="gw-pred-top">
+          <div class="gw-pred-window" style="color:${isHot?"#ff4444":"white"}">${esc(w.window)}'</div>
+          <div class="gw-pred-stars">${stars(w.confidence)}</div>
+        </div>
+        <div class="gw-pred-team" style="color:${teamColor(w.likelyTeam)}">${esc(teamName(w.likelyTeam))}</div>
+        ${scorer?`<div class="gw-pred-scorer">Buteur probable : <strong style="color:white">${esc(scorer.name)}</strong></div>`:""}
+      </div>`;
+  }
+
+  const avgRow=`
+    <div class="gw-stats-row">
+      <div class="gw-stat"><strong style="color:${homeColor}">${esc(gw.homeAvgGoals)}</strong><br><span>${esc(shortName(currentMatch.home,14))} · buts/match</span></div>
+      <div class="gw-stat"><strong style="color:${awayColor}">${esc(gw.awayAvgGoals)}</strong><br><span>${esc(shortName(currentMatch.away,14))} · buts/match</span></div>
+      <div class="gw-stat"><strong>${gw.homeGames}</strong><br><span>matchs analysés dom.</span></div>
+      <div class="gw-stat"><strong>${gw.awayGames}</strong><br><span>matchs analysés ext.</span></div>
+    </div>`;
+
+  el("content").innerHTML=`
+    <div class="pulse-stack">
+      <div class="panel">
+        <div class="panel-title">⚽ GOAL WINDOW ${tooltip("Goal Window","Probabilités de but par tranche de 15 minutes, calculées en croisant les historiques offensifs et défensifs des deux équipes sur la saison.",[{label:"Méthode",value:"(attaque dom. + défense ext.) / 2 par fenêtre"},{label:"Source",value:"API-Football /teams/statistics"}])}</div>
+        <div class="gw-timeline">
+          ${gw.windows.map(gwRow).join("")}
+        </div>
+        ${avgRow}
+      </div>
+      <div class="panel">
+        <div class="panel-title" style="margin-bottom:10px">🎯 PRÉDICTIONS</div>
+        <div class="gw-predictions">
+          ${sorted.map(predCard).join("")}
+        </div>
+      </div>
+      <div class="footer-pulse">PULSE IA · Stats saison ${currentMatch.season||new Date().getFullYear()}</div>
+    </div>`;
 }
 
 /* ─── SCORERS / ASSISTS ───────────────────────── */
@@ -3106,8 +3375,8 @@ function statRow(label,home,away){
     </div>`;
 }
 
-function refreshPulse(){ loadPulse(); }
-function backToMatches(){ el("analysisScreen").classList.remove("active");el("matchScreen").classList.add("active"); }
+function refreshPulse(){ loadPulse(true); }
+function backToMatches(){ stopLivePolling();el("analysisScreen").classList.remove("active");el("matchScreen").classList.add("active"); }
 function goHome(){ backToMatches(); }
 
 loadMatches();

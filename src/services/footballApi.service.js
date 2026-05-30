@@ -57,6 +57,7 @@ const ALLOWED_RULES = [
   { country: "Brazil", leagues: ["Serie A"] },
   { country: "Colombia", leagues: ["Primera A"] },
   { country: "Ecuador", leagues: ["Liga Pro"] },
+  { country: "Canada", leagues: ["Canadian Premier League"] },
   { country: "USA", leagues: ["Major League Soccer"] },
   { country: "Mexico", leagues: ["Liga MX"] },
 
@@ -668,6 +669,17 @@ async function getTeamStatistics(teamId, leagueId, season) {
   return data.response;
 }
 
+function clearFixtureCache(matchId) {
+  if (!matchId) return;
+  [
+    "/fixtures?id=" + matchId,
+    "/fixtures/statistics?fixture=" + matchId,
+    "/fixtures/events?fixture=" + matchId,
+    "/fixtures/players?fixture=" + matchId,
+    "/fixtures/lineups?fixture=" + matchId
+  ].forEach(function(key) { apiCache.delete(key); });
+}
+
 async function getFixtureStatus(matchId) {
   if (!matchId) return null;
   const data = await apiFootball("/fixtures?id=" + matchId);
@@ -727,6 +739,7 @@ module.exports = {
   getTeamStatistics,
   getFixtureStatus,
   getH2H,
+  clearFixtureCache,
 
   // Helpers utiles pour les autres services
   extractXg,
