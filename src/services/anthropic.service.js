@@ -8,18 +8,44 @@ async function askClaude(prompt) {
     throw error;
   }
 
+  // Support both legacy string prompts and the new { system, user } split
+  // used for Anthropic prompt caching (system block is reused across requests).
+  let systemContent;
+  let userContent;
+
+  if (prompt && typeof prompt === 'object' && prompt.system && prompt.user) {
+    systemContent = [
+      {
+        type: 'text',
+        text: prompt.system,
+        cache_control: { type: 'ephemeral' }
+      }
+    ];
+    userContent = prompt.user;
+  } else {
+    systemContent = undefined;
+    userContent = String(prompt);
+  }
+
+  const body = {
+    model: anthropicModel,
+    max_tokens: 1200,
+    messages: [{ role: 'user', content: userContent }]
+  };
+
+  if (systemContent) {
+    body.system = systemContent;
+  }
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': anthropicKey,
-      'anthropic-version': '2023-06-01'
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'prompt-caching-2024-07-31'
     },
-    body: JSON.stringify({
-      model: anthropicModel,
-      max_tokens: 1200,
-      messages: [{ role: 'user', content: prompt }]
-    })
+    body: JSON.stringify(body)
   });
 
   const data = await response.json();

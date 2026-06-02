@@ -2925,6 +2925,17 @@ function renderTacticalContent(data){
 }
 
 async function loadTacticalWithRetry(){
+  // If the main analysis already returned tactical data (e.g. phase-2 completed
+  // while the user was opening this tab), skip the extra API call entirely.
+  const existing=buildTacticalFromSections();
+  if(existing&&hasTacticalData(existing)){
+    tacticalCache=existing;
+    tacticalCacheTs=Date.now();
+    lastTacticalMinute=currentMatch?.minute||0;
+    tacticalLoading=false;
+    if(currentTab==="tactical") renderTactical();
+    return;
+  }
   tacticalLoading=true;
   tacticalError=false;
   const MAX=3;

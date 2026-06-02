@@ -7,6 +7,26 @@ const { clearFixtureCache } = require("../services/footballApi.service");
 
 const router = express.Router();
 
+// In-memory cache for Claude responses keyed by fixtureId + lang.
+// Avoids redundant Anthropic calls when multiple users analyze the same live match.
+const claudeCache = new Map();
+const CLAUDE_CACHE_TTL_MS = 90 * 1000;
+
+function getClaudeCache(fixtureId, lang) {
+  const key = `${fixtureId}_${lang}`;
+  const entry = claudeCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CLAUDE_CACHE_TTL_MS) {
+    claudeCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setClaudeCache(fixtureId, lang, data) {
+  claudeCache.set(`${fixtureId}_${lang}`, { data, ts: Date.now() });
+}
+
 function cleanClaudeText(rawText) {
   return String(rawText || "")
     .replace(/```json/g, "")
@@ -213,21 +233,34 @@ router.post("/analyze", async function(req, res) {
     let rawText = "";
     let parsedSections = {};
 
-    try {
-      const prompt = buildPrompt(context, lang, isLive, pulse);
-      rawText = await askClaude(prompt);
-      parsedSections = safeJsonParse(rawText);
-    } catch (claudeError) {
-      console.error("❌ CLAUDE ERROR:", claudeError.message);
+    // Check Claude response cache before calling the API (live matches only).
+    const fixtureId = match.id || match.fixture?.id;
+    const cachedSections = (!noCache && isLive && fixtureId)
+      ? getClaudeCache(fixtureId, lang)
+      : null;
 
-      parsedSections = {
-        live: "",
-        tactical: "<p>Lecture tactique indisponible.</p>",
-        scorers: "<p>Lecture buteurs indisponible.</p>",
-        assists: "<p>Lecture passeurs indisponible.</p>",
-        penalties: "<p>Lecture penalties indisponible.</p>",
-        rawUnavailable: true
-      };
+    if (cachedSections) {
+      parsedSections = cachedSections;
+    } else {
+      try {
+        const prompt = buildPrompt(context, lang, isLive, pulse);
+        rawText = await askClaude(prompt);
+        parsedSections = safeJsonParse(rawText);
+        if (isLive && fixtureId && !parsedSections.rawUnavailable) {
+          setClaudeCache(fixtureId, lang, parsedSections);
+        }
+      } catch (claudeError) {
+        console.error("❌ CLAUDE ERROR:", claudeError.message);
+
+        parsedSections = {
+          live: "",
+          tactical: "<p>Lecture tactique indisponible.</p>",
+          scorers: "<p>Lecture buteurs indisponible.</p>",
+          assists: "<p>Lecture passeurs indisponible.</p>",
+          penalties: "<p>Lecture penalties indisponible.</p>",
+          rawUnavailable: true
+        };
+      }
     }
 
     const sections = normalizeSections(
