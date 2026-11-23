@@ -1,5 +1,7 @@
 const API_KEY = process.env.API_FOOTBALL_KEY;
 const BASE_URL = "https://v3.football.api-sports.io";
+const MATCH_TIMEZONE = "Europe/Paris";
+const API_TIMEOUT_MS = 10000;
 
 // IDs fiables pour les compétitions internationales de clubs CONMEBOL
 // Indépendant du country/name retourné par l'API
@@ -72,12 +74,30 @@ function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+// Normalize competition labels only; statistics keep their existing matching.
+function normalizeCompetition(value) {
+  return normalizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/[-_.\s]+/g, " ")
+    .trim();
+}
+
+// International competitions may be reported under World or their continent.
+// Reuse only names that are already present in the current selection.
+const INTERNATIONAL_LEAGUES = new Set(
+  ALLOWED_RULES
+    .filter(function(rule) {
+      return ["World", "Europe", "Africa", "South-America", "South America"].includes(rule.country);
+    })
+    .flatMap(function(rule) { return rule.leagues.map(normalizeCompetition); })
+);
+
 function isAllowedCompetition(item) {
   const country = item?.league?.country;
   const league = item?.league?.name;
   const leagueId = Number(item?.league?.id || 0);
-
-  if (!league) return false;
 
   const lowerLeague = normalizeText(league);
   const home = normalizeText(item?.teams?.home?.name);
@@ -101,13 +121,15 @@ function isAllowedCompetition(item) {
   // Vérification par ID en priorité (indépendant du country/name de l'API)
   if (leagueId && ALLOWED_LEAGUE_IDS.includes(leagueId)) return true;
 
+  if (!league) return false;
+  if (INTERNATIONAL_LEAGUES.has(normalizeCompetition(league))) return true;
   if (!country) return false;
 
   return ALLOWED_RULES.some(function (rule) {
-    if (rule.country !== country) return false;
+    if (normalizeCompetition(rule.country) !== normalizeCompetition(country)) return false;
 
     return rule.leagues.some(function (allowedLeague) {
-      return normalizeText(league) === normalizeText(allowedLeague);
+      return normalizeCompetition(league) === normalizeCompetition(allowedLeague);
     });
   });
 }
@@ -122,47 +144,76 @@ function getCacheTtl(endpoint) {
   return 45000;                                                     // 45s live
 }
 
-async function apiFootball(endpoint) {
-  if (!API_KEY) {
-    console.error("❌ API_FOOTBALL_KEY manquante");
-    return null;
-  }
+function footballApiError(code, message, statusCode = 502) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
 
-  const now = Date.now();
-  const cached = apiCache.get(endpoint);
-  if (cached && (now - cached.ts) < getCacheTtl(endpoint)) {
-    console.log("📦 CACHE HIT:", endpoint.slice(0, 70));
-    return cached.data;
-  }
-
+async function apiFootball(endpoint, { required = false } = {}) {
+  let timeout;
+  let controller;
   try {
-    const response = await fetch(BASE_URL + endpoint, {
-      method: "GET",
-      headers: {
-        "x-apisports-key": API_KEY
-      }
-    });
-
-    const data = await response.json();
-
-    console.log("📡 API CALL:", endpoint);
-
-    if (!response.ok) {
-      console.error("❌ API HTTP ERROR:", response.status);
-      console.error(JSON.stringify(data, null, 2));
-      return null;
+    if (!API_KEY || !API_KEY.trim()) {
+      throw footballApiError("API_FOOTBALL_CONFIG", "API_FOOTBALL_KEY manquante sur le serveur.", 503);
     }
 
-    if (data.errors && Object.keys(data.errors).length > 0) {
-      console.error("❌ API ERRORS:", JSON.stringify(data.errors, null, 2));
+    const cached = apiCache.get(endpoint);
+    if (cached && (Date.now() - cached.ts) < getCacheTtl(endpoint)) {
+      return cached.data;
+    }
+
+    controller = new AbortController();
+    timeout = setTimeout(function() { controller.abort(); }, API_TIMEOUT_MS);
+    const response = await fetch(BASE_URL + endpoint, {
+      method: "GET",
+      signal: controller.signal,
+      headers: { "x-apisports-key": API_KEY }
+    });
+
+    if (!response.ok) {
+      throw footballApiError("API_FOOTBALL_HTTP", "API-Football a renvoyé HTTP " + response.status + ".");
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      throw footballApiError("API_FOOTBALL_RESPONSE", "Réponse JSON API-Football invalide.");
+    }
+
+    if (data?.errors && Object.keys(data.errors).length > 0) {
+      // Provider details stay in server logs; redact the configured API key.
+      const details = JSON.stringify(data.errors).split(API_KEY).join("[REDACTED]");
+      console.error("API-Football errors:", endpoint, details);
+      throw footballApiError("API_FOOTBALL_PROVIDER", "API-Football signale une erreur. Vérifier la clé, le quota et les droits de l'abonnement dans les logs serveur.");
+    }
+
+    // Team statistics return an object, other endpoints used here return arrays.
+    const validResponse = endpoint.startsWith("/teams/statistics?")
+      ? data?.response && typeof data.response === "object"
+      : Array.isArray(data?.response);
+    if (!validResponse) {
+      throw footballApiError("API_FOOTBALL_RESPONSE", "Structure de réponse API-Football invalide.");
     }
 
     apiCache.set(endpoint, { data, ts: Date.now() });
-
     return data;
   } catch (err) {
-    console.error("❌ FETCH ERROR:", err.message);
+    const error = err.statusCode ? err : (
+      controller?.signal.aborted || err.name === "AbortError" || err.name === "TimeoutError"
+        ? footballApiError("API_FOOTBALL_TIMEOUT", "Délai de réponse API-Football dépassé.", 504)
+        : footballApiError("API_FOOTBALL_NETWORK", "API-Football est injoignable.")
+    );
+    console.error("API-Football request failed:", endpoint, error.code, error.message);
+    // Discovery reports failures. Optional analysis data retain their previous
+    // null/empty fallback so a missing statistic does not break an analysis.
+    if (required) throw error;
     return null;
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -282,9 +333,7 @@ function extractStat(stats, possibleNames) {
 async function getLiveMatches() {
   console.log("🔴 GET LIVE MATCHES");
 
-  const data = await apiFootball("/fixtures?live=all");
-
-  if (!data || !data.response) return [];
+  const data = await apiFootball("/fixtures?live=all", { required: true });
 
   console.log("🔴 LIVE RAW:", data.response.length);
 
@@ -295,42 +344,35 @@ async function getLiveMatches() {
   return filtered.map(formatFixture);
 }
 
+function getMatchDates(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: MATCH_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit"
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map(function(part) { return [part.type, part.value]; }));
+  const today = values.year + "-" + values.month + "-" + values.day;
+  // Advance a calendar date, not the current instant by 24h (DST boundaries).
+  const tomorrow = new Date(today + "T00:00:00Z");
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  return [today, tomorrow.toISOString().slice(0, 10)];
+}
+
 async function getScheduledMatches() {
-  console.log("📅 GET SCHEDULED MATCHES");
-
-  const today = new Date();
-  const tomorrow = new Date();
-
-  tomorrow.setDate(today.getDate() + 1);
-
-  const todayStr = today.toISOString().split("T")[0];
-  const tomorrowStr = tomorrow.toISOString().split("T")[0];
-
-  const todayData = await apiFootball("/fixtures?date=" + todayStr);
-  const tomorrowData = await apiFootball("/fixtures?date=" + tomorrowStr);
-
-  const allFixtures = [
-    ...(todayData?.response || []),
-    ...(tomorrowData?.response || [])
-  ];
-
-  console.log("📅 TOTAL FIXTURES:", allFixtures.length);
-
+  const dates = getMatchDates();
+  const days = await Promise.all(dates.map(function(date) {
+    return apiFootball("/fixtures?date=" + date + "&timezone=" + encodeURIComponent(MATCH_TIMEZONE), { required: true });
+  }));
+  const allFixtures = days.flatMap(function(day) { return day.response; });
   const scheduled = allFixtures
     .filter(isAllowedCompetition)
-    .filter(function (item) {
-      return item.fixture &&
-        item.fixture.status &&
-        item.fixture.status.short === "NS";
-    });
+    .filter(function(item) { return item.fixture?.status?.short === "NS"; });
 
-  console.log("📅 SCHEDULED FILTERED:", scheduled.length);
+  console.log("SCHEDULED FIXTURES:", { dates, raw: allFixtures.length, filtered: scheduled.length });
 
-  return scheduled
+  return Array.from(new Map(scheduled.map(function(item) {
+    return [item.fixture.id, item];
+  })).values())
     .map(formatFixture)
-    .sort(function (a, b) {
-      return (a.startTimestamp || 0) - (b.startTimestamp || 0);
-    });
+    .sort(function(a, b) { return (a.startTimestamp || 0) - (b.startTimestamp || 0); });
 }
 
 async function getFixtureStatistics(matchId) {
